@@ -112,6 +112,37 @@ public final class TestRealExportEngine {
        .export(chatId,new ByteArrayOutputStream(),PASS);
     ok(recovery.messages==250 && recovery.media==8 && recovery.historyFinished,
        "Failed media download was not safely resumable");
+    // Long history, three independent process/transport failures, then resume.
+    File longRoot=Files.createTempDirectory("real-exporter-large-history-").toFile();
+    long[] longIds=new long[2_000];
+    for(int i=0;i<longIds.length;i++)longIds[i]=200_000L-31L*i;
+    for(int fail:new int[]{6,15,31}){
+      TdGateway flaky=new TdGateway(longIds,longRoot);
+      flaky.failOnHistoryCall(fail);
+      boolean stopped=false;
+      try {
+        new ExportEngine(new Context(longRoot),flaky,x->{}).export(chatId,
+           new ByteArrayOutputStream(),PASS);
+      }catch(IOException expected){
+        stopped=expected.getMessage().contains("SIMULATED_NETWORK_DROP");
+      }
+      ok(stopped,"Expected independent outage at request "+fail);
+    }
+    ByteArrayOutputStream largeArchive=new ByteArrayOutputStream();
+    ExportEngine.Summary largeResult=new ExportEngine(
+       new Context(longRoot),new TdGateway(longIds,longRoot),x->{})
+       .export(chatId,largeArchive,PASS);
+    ok(largeResult.historyFinished&&largeResult.messages==2_000&&largeResult.media==8,
+       "Long export incomplete after repeated outages");
+    Map<String,byte[]> largeFiles=unpack(largeArchive.toByteArray());
+    Set<Long> verifiedIds=new HashSet<>();
+    for(Map.Entry<String,byte[]> e:largeFiles.entrySet())if(e.getKey().startsWith("messages/"))
+      for(String line:new String(e.getValue(),StandardCharsets.UTF_8).split("\\n")){
+        if(line.isEmpty())continue;
+        ok(verifiedIds.add(new JSONObject(line).getLong("id")),"Duplicate after multiple restarts");
+      }
+    ok(verifiedIds.size()==longIds.length,"Missing messages after repeated restarts");
+    for(long id:longIds)ok(verifiedIds.contains(id),"Missing sparse message "+id);
     System.out.println("PASS: real ExportEngine with fake TDLib: 250 sparse messages, 8 media formats, interrupted/resumed history, encrypted TVA, exact media bytes/sha256 and manifest; pages="+pages);
   }
 }
