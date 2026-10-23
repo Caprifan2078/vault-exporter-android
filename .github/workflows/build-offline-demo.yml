@@ -19,7 +19,18 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - name: Configure Android SDK without setup-android action
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/android-sdk/cmdline-tools" /tmp/vault-sdk-tools
+          curl -fLsS --retry 3 https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/vault-sdk.zip
+          unzip -q /tmp/vault-sdk.zip -d /tmp/vault-sdk-tools
+          mv /tmp/vault-sdk-tools/cmdline-tools "$HOME/android-sdk/cmdline-tools/latest"
+          echo "ANDROID_HOME=$HOME/android-sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> "$GITHUB_ENV"
+          yes | "$HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$HOME/android-sdk" --licenses >/dev/null || true
+          "$HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$HOME/android-sdk" 'platforms;android-35' 'build-tools;35.0.0'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -72,7 +83,7 @@ jobs:
             </application>
           </manifest>
           XML
-          command -v ffmpeg || sudo apt-get update -qq && sudo apt-get install -y ffmpeg
+          if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y ffmpeg; fi
           ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=0x113355:s=160x160:d=1:r=4' -c:v mpeg4 -q:v 12 -pix_fmt yuv420p -movflags +faststart -y srcapp/app/src/main/assets/demo_round.mp4
           ! grep -q 'android.permission.INTERNET' srcapp/app/src/main/AndroidManifest.xml
           ! grep -R 'TdGateway\|TdNative\|SessionSecrets' srcapp/app/src/main/java
