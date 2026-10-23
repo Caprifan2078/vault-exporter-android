@@ -31,3 +31,10 @@ jobs:
           assert 'Конец истории не подтверждён двумя запросами' in content
           print('PASS: actual v0.9 exporter cursor patch applied; NOT a real TDLib execution test')
           PY
+      - name: Run 10000-message sparse pagination contract test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cursor-classes
+          javac -d /tmp/cursor-classes exporter-integration/HistoryCursor.java exporter-integration/TestHistoryCursor.java
+          java -cp /tmp/cursor-classes TestHistoryCursor
