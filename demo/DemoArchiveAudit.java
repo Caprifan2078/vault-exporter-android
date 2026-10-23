@@ -13,6 +13,24 @@ import java.util.zip.*;
  */
 public final class DemoArchiveAudit {
   private DemoArchiveAudit(){}
+  /** Populated only after every encrypted block and every indexed attachment passes validation. */
+  public static final class Report {
+    public final int messages;
+    public final int media;
+    public final String preview;
+    private Report(int messages,int media,String preview){
+      this.messages=messages;this.media=media;this.preview=preview;
+    }
+  }
+  private static final Pattern SENDER=Pattern.compile("\\\"sender\\\"\\s*:\\s*\\\"([^\\\"]*)\\\"");
+  private static final Pattern TEXT=Pattern.compile("\\\"text\\\"\\s*:\\s*\\\"([^\\\"]*)\\\"");
+  private static String shortField(Pattern regex,String json){
+    Matcher m=regex.matcher(json);
+    if(!m.find())return "—";
+    String result=m.group(1);
+    if(result.length()>140)result=result.substring(0,140)+"…";
+    return result.replace("\\n"," ").replace("\\r"," ").replace("\\t"," ");
+  }
   private static final Pattern MESSAGE_ID=Pattern.compile("\"id\"\\s*:\\s*(\\d+)");
   private static final Pattern MESSAGE_LINK=Pattern.compile("\"message_id\"\\s*:\\s*(\\d+)");
   private static final Pattern PATH=Pattern.compile("\"path\"\\s*:\\s*\"([^\"]+)\"");
@@ -59,12 +77,16 @@ public final class DemoArchiveAudit {
     if(!valid)throw new IOException("Неверная сигнатура вложения: "+path);
   }
   public static void verify(InputStream file,char[] password)throws Exception{
+    inspect(file,password);
+  }
+  public static Report inspect(InputStream file,char[] password)throws Exception{
     Set<String> entryNames=new HashSet<>();
     Set<Long> messageIds=new HashSet<>();
     Map<String,MediaLink> links=new HashMap<>();
     Map<String,String> present=new HashMap<>();
     String manifest=null;
     int textMessages=0;
+    ArrayDeque<String> lastMessages=new ArrayDeque<>();
     try(ChunkedVault.Decrypt decrypted=new ChunkedVault.Decrypt(file,password);
         ZipInputStream zip=new ZipInputStream(decrypted)){
       ZipEntry entry;
@@ -84,6 +106,9 @@ public final class DemoArchiveAudit {
             long id=Long.parseLong(group(MESSAGE_ID,line,"id сообщения"));
             if(id<1||!messageIds.add(id))throw new IOException("Повтор ID сообщения: "+id);
             textMessages++;
+            if(textMessages>200000)throw new IOException("Слишком много сообщений в демо");
+            lastMessages.addLast("• "+shortField(SENDER,line)+": "+shortField(TEXT,line));
+            if(lastMessages.size()>6)lastMessages.removeFirst();
           }
         }else if(name.startsWith("media-index/")&&name.endsWith(".jsonl")){
           String content=readBounded(zip,4*1024*1024);
@@ -133,5 +158,8 @@ public final class DemoArchiveAudit {
       if(sha==null||!sha.equals(metadata.expectedHash))
         throw new IOException("Неверная контрольная сумма/нет медиа "+link.getKey());
     }
+    StringBuilder preview=new StringBuilder();
+    for(String text:lastMessages)preview.append(text).append('\n');
+    return new Report(textMessages,present.size(),preview.toString().trim());
   }
 }
