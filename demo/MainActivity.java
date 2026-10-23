@@ -163,7 +163,7 @@ public final class MainActivity extends Activity {
           archive.writeBytes("media/103/photo.png",png);
           archive.writeBytes("media/105/voice.wav",makeVoice());
           postProgress("Видео и индекс файлов…",56);
-          try(InputStream in=new java.io.ByteArrayInputStream(android.util.Base64.decode(VaultVideo.DATA,android.util.Base64.DEFAULT))){
+          try(InputStream in=getAssets().open("demo_round.mp4")){
             archive.writeStream("media/107/round.mp4",in);
           }
           archive.writeBytes("media-index/page-000001.jsonl",(
