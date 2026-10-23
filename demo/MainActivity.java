@@ -163,7 +163,7 @@ public final class MainActivity extends Activity {
           archive.writeBytes("media/103/photo.png",png);
           archive.writeBytes("media/105/voice.wav",makeVoice());
           postProgress("Видео и индекс файлов…",56);
-          try(InputStream in=getAssets().open("demo_round.mp4")){
+          try(InputStream in=new java.io.ByteArrayInputStream(android.util.Base64.decode(VaultVideo.DATA,android.util.Base64.DEFAULT))){
             archive.writeStream("media/107/round.mp4",in);
           }
           archive.writeBytes("media-index/page-000001.jsonl",(
@@ -178,7 +178,7 @@ public final class MainActivity extends Activity {
         }
         postProgress("Проверяем зашифрованный файл…",76);
         try(InputStream in=new FileInputStream(staged)){
-          if(ArchiveVerifier.verify(in,pass)!=5)
+          if(ArchiveVerifier.verify(in,pass)!=6)
             throw new IOException("Неожиданная структура архива");
         }
         postProgress("Сохраняем в выбранную папку…",88);
