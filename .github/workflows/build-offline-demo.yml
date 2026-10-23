@@ -96,7 +96,6 @@ jobs:
           APK=srcapp/app/build/outputs/apk/debug/app-debug.apk
           test -s "$APK"
           unzip -l "$APK" | grep 'assets/demo_round.mp4'
-          sdkmanager 'build-tools;35.0.0'
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" | tee /tmp/vault-perms.txt
           ! grep -E 'INTERNET|ACCESS_NETWORK_STATE|READ_CONTACTS|READ_SMS' /tmp/vault-perms.txt
           sha256sum "$APK"
