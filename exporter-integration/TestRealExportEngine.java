@@ -67,6 +67,30 @@ public final class TestRealExportEngine {
     for(long id:ids)ok(actual.contains(id),"Missing "+id);
     ok(mediaItems==1,"Wrong media entries "+mediaItems);
     ok(index.contains("sha256"),"No media hash index");
+    String[] mediaRows=index.split("\\n");
+    int checked=0;
+    for(String row:mediaRows){
+      if(row.trim().isEmpty())continue;
+      JSONObject ref=new JSONObject(row);
+      String path=ref.getString("path");
+      byte[] bytes=unpacked.get(path);
+      ok(bytes!=null,"Indexed media missing: "+path);
+      ok(ref.getLong("bytes")==bytes.length,"Wrong indexed media length");
+      java.security.MessageDigest digest=java.security.MessageDigest.getInstance("SHA-256");
+      byte[] sha=digest.digest(bytes);
+      StringBuilder hex=new StringBuilder();
+      for(byte b:sha)hex.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
+      ok(hex.toString().equals(ref.getString("sha256")),"Media hash mismatch");
+      ok(new String(bytes,StandardCharsets.UTF_8).equals("OggS fake voice data"),
+        "Wrong voice data contents");
+      checked++;
+    }
+    ok(checked==1,"Unexpected indexed media count");
+    boolean denied=false;
+    try{ArchiveVerifier.verify(new ByteArrayInputStream(output.toByteArray()),
+       "definitely-wrong-password".toCharArray());}
+    catch(Exception expected){denied=true;}
+    ok(denied,"Encrypted export readable with incorrect password");
     ok(entries==unpacked.size(),"Unexpected ZIP entries");
     JSONObject manifest=new JSONObject(new String(unpacked.get("manifest.json"),StandardCharsets.UTF_8));
     ok(manifest.getInt("messages")==250 && manifest.getInt("media_downloaded")==1,"Manifest count mismatch");
