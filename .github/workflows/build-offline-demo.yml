@@ -60,8 +60,8 @@ jobs:
               applicationId 'org.vault.exporter.offlinedemo'
               minSdk 26
               targetSdk 35
-              versionCode 3
-              versionName '1.2-offline-reader'
+              versionCode 4
+              versionName '1.3-offline-hardened'
             }
             compileOptions {
               sourceCompatibility JavaVersion.VERSION_17
@@ -112,6 +112,10 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" | tee /tmp/vault-perms.txt
           ! grep -E 'INTERNET|ACCESS_NETWORK_STATE|READ_CONTACTS|READ_SMS' /tmp/vault-perms.txt
           sha256sum "$APK"
+      - name: Android 13 emulator launch smoke test (synthetic, no Telegram)
+        timeout-minutes: 15
+        shell: bash
+        run: bash demo/ci-emulator-smoke.sh
       - uses: actions/upload-artifact@v4
         with:
           name: Vault-Offline-Demo-APK
