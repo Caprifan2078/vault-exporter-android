@@ -5,6 +5,13 @@ set -euo pipefail
 SDK="$ANDROID_HOME"
 APK="srcapp/app/build/outputs/apk/debug/app-debug.apk"
 test -s "$APK"
+# GitHub's standard shared runner may not expose /dev/kvm. A software x86_64
+# emulator can hang before adb becomes ready. Do not mistake this for an app crash.
+if [ ! -c /dev/kvm ] || [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+  echo "::notice title=Android emulator unavailable::SKIPPED RUNTIME SMOKE: no usable /dev/kvm on this GitHub runner."
+  echo "RUNTIME_SMOKE=SKIPPED_NO_KVM" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+  exit 0
+fi
 SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
 "$SDKMANAGER" --sdk_root="$SDK" 'platform-tools' 'emulator' 'system-images;android-33;google_apis;x86_64'
 export PATH="$SDK/platform-tools:$SDK/emulator:$PATH"
@@ -18,9 +25,9 @@ cleanup(){
   kill "$EMULATOR_PID" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
-adb wait-for-device
+timeout 90s adb wait-for-device
 READY=0
-for i in $(seq 1 150); do
+for i in $(seq 1 90); do
   if [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ]; then READY=1; break; fi
   sleep 2
 done
