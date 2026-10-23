@@ -136,7 +136,7 @@ public final class MainActivity extends Activity {
           }catch(Exception error){
             postProgress("Не удалось проверить архив",0);
             runOnUiThread(()->showMessage("Пароль неверный, архив повреждён или это не поддерживаемое офлайн-демо. Содержимое не показано."));
-          }finally{Arrays.fill(secret,'\\0');busy=false;}
+          }finally{Arrays.fill(secret,'\0');busy=false;}
         });
       }).show();
   }
