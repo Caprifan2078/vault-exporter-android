@@ -169,17 +169,18 @@ public final class MainActivity extends Activity {
             ArchiveWriter archive=new ArchiveWriter(o,pass)){
           archive.writeBytes("messages/page-000001.jsonl",syntheticMessages());
           postProgress("Фотография и вложения…",32);
-          byte[] png=makeImage();
+          byte[] png=makeImage(), wav=makeVoice();
           archive.writeBytes("media/103/photo.png",png);
-          archive.writeBytes("media/105/voice.wav",makeVoice());
+          archive.writeBytes("media/105/voice.wav",wav);
           postProgress("Видео и индекс файлов…",56);
+          String mp4Hash;
           try(InputStream in=getAssets().open("demo_round.mp4")){
-            archive.writeStream("media/107/round.mp4",in);
+            mp4Hash=archive.writeStream("media/107/round.mp4",in);
           }
           archive.writeBytes("media-index/page-000001.jsonl",(
-            "{\"message_id\":103,\"type\":\"photo\",\"path\":\"media/103/photo.png\"}\n"+
-            "{\"message_id\":105,\"type\":\"voice\",\"path\":\"media/105/voice.wav\"}\n"+
-            "{\"message_id\":107,\"type\":\"round_video\",\"path\":\"media/107/round.mp4\"}\n"
+            "{\"message_id\":103,\"type\":\"photo\",\"path\":\"media/103/photo.png\",\"sha256\":\""+sha256(png)+"\"}\n"+
+            "{\"message_id\":105,\"type\":\"voice\",\"path\":\"media/105/voice.wav\",\"sha256\":\""+sha256(wav)+"\"}\n"+
+            "{\"message_id\":107,\"type\":\"round_video\",\"path\":\"media/107/round.mp4\",\"sha256\":\""+mp4Hash+"\"}\n"
           ).getBytes(StandardCharsets.UTF_8));
           archive.writeBytes("manifest.json",(
             "{\"schema\":\"tg-vault-v1\",\"synthetic\":true,\"messages\":120,\"media\":3,"+
@@ -191,6 +192,9 @@ public final class MainActivity extends Activity {
           if(ArchiveVerifier.verify(in,pass)!=6)
             throw new IOException("Неожиданная структура архива");
         }
+        try(InputStream in=new FileInputStream(staged)){
+          DemoArchiveAudit.verify(in,pass);
+        }
         postProgress("Сохраняем в выбранную папку…",88);
         try(InputStream in=new BufferedInputStream(new FileInputStream(staged));
             OutputStream out=getContentResolver().openOutputStream(target,"w")){
@@ -199,19 +203,35 @@ public final class MainActivity extends Activity {
           while((n=in.read(block))!=-1)out.write(block,0,n);
           out.flush();
         }
+        // A successful copy isn't a verified copy: re-open the destination and
+        // authenticate every block and every media reference one more time.
+        postProgress("Проверяем сохранённый файл…",94);
+        try(InputStream saved=getContentResolver().openInputStream(target)){
+          if(saved==null)throw new IOException("Не удалось повторно открыть сохранённый архив");
+          DemoArchiveAudit.verify(saved,pass);
+        }
         postProgress("Готово: архив проверен и сохранён",100);
         runOnUiThread(()->new AlertDialog.Builder(this)
           .setTitle("Архив готов")
           .setMessage("Тестовый .tva сохранён. Он зашифрован, а содержимое проверено. Это вымышленные данные; Telegram не использовался.")
           .setPositiveButton("Отлично",null).show());
       }catch(Exception e){
-        postProgress("Не удалось сохранить: "+e.getClass().getSimpleName(),0);
+        boolean removed=false;
+        try { removed=getContentResolver().delete(target,null,null)>0; }catch(Exception ignored){}
+        postProgress("Ошибка: "+e.getClass().getSimpleName()
+          +(removed?". Неполный файл удалён.":". Проверь и удали неполный файл вручную."),0);
       }finally{
         Arrays.fill(pass,'\0');
         if(staged!=null&&!staged.delete())staged.deleteOnExit();
         busy=false;
       }
     });
+  }
+  private static String sha256(byte[] data)throws Exception{
+    byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(data);
+    StringBuilder hex=new StringBuilder();
+    for(byte b:digest)hex.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
+    return hex.toString();
   }
   private byte[] syntheticMessages() {
     StringBuilder out=new StringBuilder();
