@@ -41,3 +41,22 @@ jobs:
           mkdir -p /tmp/cursor-classes
           javac -d /tmp/cursor-classes exporter-integration/HistoryCursor.java exporter-integration/TestHistoryCursor.java
           java -cp /tmp/cursor-classes TestHistoryCursor
+      - name: Run actual ExportEngine against offline fake TDLib
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Compile the real source, not a reimplementation. Only Context,
+          # SessionSecrets, and TdGateway use test-only fakes.
+          ROOT=/tmp/vault-src/Vault-Exporter-Android-v09/app/src/main/java/org/vault/exporter
+          curl -fsSL --retry 3 https://repo.maven.apache.org/maven2/org/json/json/20240303/json-20240303.jar -o /tmp/org-json.jar
+          mkdir -p /tmp/engine-test-classes
+          javac -cp /tmp/org-json.jar -d /tmp/engine-test-classes \
+            exporter-integration/fakes/android/content/Context.java \
+            exporter-integration/fakes/org/vault/exporter/TdGateway.java \
+            exporter-integration/fakes/org/vault/exporter/SessionSecrets.java \
+            "$ROOT"/ExportEngine.java "$ROOT"/ResumeStore.java \
+            "$ROOT"/ArchiveWriter.java "$ROOT"/ArchiveVerifier.java \
+            "$ROOT"/ChunkedVault.java "$ROOT"/TelegramRateLimit.java \
+            "$ROOT"/HistoryCursor.java \
+            exporter-integration/TestRealExportEngine.java
+          java -Xmx512m -cp /tmp/engine-test-classes:/tmp/org-json.jar TestRealExportEngine
