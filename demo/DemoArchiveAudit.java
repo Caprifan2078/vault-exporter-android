@@ -13,6 +13,8 @@ import java.util.zip.*;
  */
 public final class DemoArchiveAudit {
   private DemoArchiveAudit(){}
+  private static final long MAX_TOTAL_UNCOMPRESSED=256L*1024*1024;
+  private static final long MAX_SINGLE_MEDIA=200L*1024*1024;
   /** Populated only after every encrypted block and every indexed attachment passes validation. */
   public static final class Report {
     public final int messages;
@@ -86,6 +88,7 @@ public final class DemoArchiveAudit {
     Map<String,String> present=new HashMap<>();
     String manifest=null;
     int textMessages=0;
+    long totalUncompressed=0;
     ArrayDeque<String> lastMessages=new ArrayDeque<>();
     try(ChunkedVault.Decrypt decrypted=new ChunkedVault.Decrypt(file,password);
         ZipInputStream zip=new ZipInputStream(decrypted)){
@@ -99,8 +102,10 @@ public final class DemoArchiveAudit {
         if(name.equals("manifest.json")){
           if(manifest!=null)throw new IOException("Повтор манифеста");
           manifest=readBounded(zip,1024*1024);
+          totalUncompressed+=manifest.getBytes(StandardCharsets.UTF_8).length;
         }else if(name.startsWith("messages/")&&name.endsWith(".jsonl")){
           String content=readBounded(zip,8*1024*1024);
+          totalUncompressed+=content.getBytes(StandardCharsets.UTF_8).length;
           for(String line:content.split("\n")){
             if(line.trim().isEmpty())continue;
             long id=Long.parseLong(group(MESSAGE_ID,line,"id сообщения"));
@@ -112,6 +117,7 @@ public final class DemoArchiveAudit {
           }
         }else if(name.startsWith("media-index/")&&name.endsWith(".jsonl")){
           String content=readBounded(zip,4*1024*1024);
+          totalUncompressed+=content.getBytes(StandardCharsets.UTF_8).length;
           for(String line:content.split("\n")){
             if(line.trim().isEmpty())continue;
             long id=Long.parseLong(group(MESSAGE_LINK,line,"message_id"));
@@ -130,11 +136,14 @@ public final class DemoArchiveAudit {
             int extra=Math.min(n,first.length-firstLen);
             if(extra>0){System.arraycopy(buffer,0,first,firstLen,extra);firstLen+=extra;}
             length+=n;
-            if(length>200L*1024*1024)throw new IOException("Слишком большой медиафайл демо");
+            totalUncompressed+=n;
+            if(length>MAX_SINGLE_MEDIA)throw new IOException("Слишком большой медиафайл демо");
+            if(totalUncompressed>MAX_TOTAL_UNCOMPRESSED)throw new IOException("Превышен лимит распакованных данных");
           }
           checkHeader(name,first,firstLen);
           present.put(name,hex(hash.digest()));
         }else throw new IOException("Неизвестный элемент архива: "+name);
+        if(totalUncompressed>MAX_TOTAL_UNCOMPRESSED)throw new IOException("Превышен лимит распакованных данных");
         zip.closeEntry();
       }
       // ZipInputStream ends at central directory. Force authentication of the
