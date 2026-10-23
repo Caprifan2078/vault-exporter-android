@@ -148,6 +148,16 @@ public final class MainActivity extends Activity {
     if(req!=SAVE_FILE)return;
     if(res!=RESULT_OK||data==null||data.getData()==null){destroyPassword();return;}
     final Uri target=data.getData();
+    // Explicitly reject cloud-backed document providers. Android's picker can show
+    // Drive/Dropbox even without the app itself having network permission.
+    final String provider=target.getAuthority();
+    if (!("com.android.externalstorage.documents".equals(provider)
+        || "com.android.providers.downloads.documents".equals(provider)
+        || "com.android.providers.media.documents".equals(provider))) {
+      destroyPassword();
+      showMessage("Выбери локальную память телефона (например, Загрузки), а не Google Drive или другой облачный сервис.");
+      return;
+    }
     final char[] pass=pendingPassword;pendingPassword=null;
     if(pass==null)return;
     busy=true;progress.setProgress(2);showStatus("Собираем вымышленные сообщения…",2);
