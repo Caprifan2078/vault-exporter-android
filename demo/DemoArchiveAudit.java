@@ -1,7 +1,10 @@
 package org.vault.exporter;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.CharacterCodingException;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.regex.*;
@@ -62,7 +65,16 @@ public final class DemoArchiveAudit {
       if(total>bound)throw new IOException("Слишком большой файл JSON внутри архива");
       out.write(buf,0,n);
     }
-    return new String(out.toByteArray(),StandardCharsets.UTF_8);
+    // UTF-8 replacement characters can hide corrupted JSON keys/paths.
+    // Reject malformed or truncated sequences instead of silently changing data.
+    try {
+      return StandardCharsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+        .decode(ByteBuffer.wrap(out.toByteArray())).toString();
+    } catch(CharacterCodingException badUtf8) {
+      throw new IOException("Некорректный UTF-8 внутри архива",badUtf8);
+    }
   }
   private static void checkHeader(String path,byte[] first,int length)throws IOException{
     if(length==0)throw new IOException("Пустой медиафайл "+path);
