@@ -54,6 +54,13 @@ public final class RunDemoArchiveAuditTests {
     rejects("wrong sha",archive(120,false,true,false,false));
     rejects("orphan media link",archive(120,false,false,true,false));
     rejects("duplicate message id",archive(120,false,false,false,true));
+    // Wrong password must fail closed and reveal no preview.
+    char[] wrong="this-is-the-wrong-password".toCharArray();
+    boolean denied=false;
+    try { DemoArchiveAudit.inspect(new ByteArrayInputStream(good),wrong); }
+    catch(Exception expected){denied=true;}
+    finally { Arrays.fill(wrong,'\0'); }
+    check(denied,"Wrong password unexpectedly accepted");
     byte[] corrupt=good.clone();corrupt[corrupt.length/2]^=0x55;
     rejects("encrypted tampering",corrupt);
     rejects("encrypted truncation",Arrays.copyOf(good,good.length-6));
