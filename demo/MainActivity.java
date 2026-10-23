@@ -20,7 +20,7 @@ import java.util.concurrent.Executors;
  * Creates synthetic messages + real generated media and encrypts an actual TVA archive.
  */
 public final class MainActivity extends Activity {
-  private static final int SAVE_FILE=2026;
+  private static final int SAVE_FILE=2026, OPEN_FILE=2027;
   private static final int BG=0xff090f20, CARD=0xff141d36, WHITE=0xfff4f7ff,
       MUTED=0xffa8b8d2, BLUE=0xff617cf7, CYAN=0xff4cdac7;
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
@@ -89,6 +89,7 @@ public final class MainActivity extends Activity {
     addText(controls,"Попробовать самостоятельно",18,WHITE,true,8);
     addText(controls,"Создание архива проходит на устройстве. Ты выбираешь место сохранения и собственный пароль.",14,MUTED,false,4);
     button(controls,"Создать защищённый тестовый архив  →",true,this::askPassword);
+    button(controls,"Открыть и проверить архив .tva",false,this::openArchive);
     button(controls,"Посмотреть вымышленную переписку",false,this::showConversation);
 
     LinearLayout stage=panel(0xff111b31);
@@ -100,6 +101,44 @@ public final class MainActivity extends Activity {
     progressLabel=text("0%",12,CYAN,true);progressLabel.setPadding(0,dp(8),0,0);stage.addView(progressLabel);
 
     addText(body,"Важно: это проверка архивирования, а НЕ подключение к Telegram. Ни твой номер, ни аккаунт, ни переписки не используются.",12,MUTED,false,0);
+  }
+  private void openArchive(){
+    Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+    intent.addCategory(Intent.CATEGORY_OPENABLE);
+    intent.setType("*/*");
+    try{startActivityForResult(intent,OPEN_FILE);}
+    catch(Exception e){showMessage("Не удалось открыть выбор файла.");}
+  }
+  private void askOpenPassword(Uri source){
+    EditText password=new EditText(this);
+    password.setSingleLine(true);
+    password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+    LinearLayout wrapper=new LinearLayout(this);
+    wrapper.setPadding(dp(22),dp(4),dp(22),dp(4));wrapper.addView(password);
+    new AlertDialog.Builder(this).setTitle("Открыть защищённый архив")
+      .setMessage("Проверю весь файл, сообщения и вложения. Пароль останется на устройстве.")
+      .setView(wrapper).setNegativeButton("Отмена",null)
+      .setPositiveButton("Проверить",(d,w)->{
+        char[] secret=new char[password.length()];
+        password.getText().getChars(0,password.length(),secret,0);password.setText("");
+        if(secret.length==0){showMessage("Укажи пароль.");return;}
+        busy=true;postProgress("Проверяем зашифрованный архив…",15);
+        worker.execute(()->{
+          try(InputStream in=getContentResolver().openInputStream(source)){
+            if(in==null)throw new IOException("Не удалось открыть файл");
+            DemoArchiveAudit.Report report=DemoArchiveAudit.inspect(in,secret);
+            postProgress("Архив проверен полностью",100);
+            runOnUiThread(()->new AlertDialog.Builder(this)
+              .setTitle("Архив целый")
+              .setMessage("Сообщений: "+report.messages+"\nВложений: "+report.media
+                 +"\n\nПоследние сообщения:\n"+report.preview)
+              .setPositiveButton("Закрыть",null).show());
+          }catch(Exception error){
+            postProgress("Не удалось проверить архив",0);
+            runOnUiThread(()->showMessage("Пароль неверный, архив повреждён или это не поддерживаемое офлайн-демо. Содержимое не показано."));
+          }finally{Arrays.fill(secret,'\\0');busy=false;}
+        });
+      }).show();
   }
   private void showConversation(){
     String[] msg={"10:02 • Аня: Привет! Сохраним эту переписку?",
@@ -145,6 +184,10 @@ public final class MainActivity extends Activity {
   }
   @Override protected void onActivityResult(int req,int res,Intent data){
     super.onActivityResult(req,res,data);
+    if(req==OPEN_FILE){
+      if(res==RESULT_OK&&data!=null&&data.getData()!=null)askOpenPassword(data.getData());
+      return;
+    }
     if(req!=SAVE_FILE)return;
     if(res!=RESULT_OK||data==null||data.getData()==null){destroyPassword();return;}
     final Uri target=data.getData();
