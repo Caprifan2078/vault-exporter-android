@@ -109,7 +109,20 @@ public final class MainActivity extends Activity {
     try{startActivityForResult(intent,OPEN_FILE);}
     catch(Exception e){showMessage("Не удалось открыть выбор файла.");}
   }
+  private static boolean isLocalDocument(Uri uri){
+    if(uri==null || !"content".equals(uri.getScheme()))return false;
+    String authority=uri.getAuthority();
+    return "com.android.externalstorage.documents".equals(authority)
+      || "com.android.providers.downloads.documents".equals(authority)
+      || "com.android.providers.media.documents".equals(authority);
+  }
   private void askOpenPassword(Uri source){
+    // Providers may implement their own networking even without INTERNET permission.
+    // Read and write only Android's known local DocumentsProviders.
+    if(!isLocalDocument(source)){
+      showMessage("Для приватности выбери файл из локальной памяти телефона — «Загрузки» или «Внутренняя память». Облачные хранилища не поддерживаются.");
+      return;
+    }
     EditText password=new EditText(this);
     password.setSingleLine(true);
     password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -193,10 +206,7 @@ public final class MainActivity extends Activity {
     final Uri target=data.getData();
     // Explicitly reject cloud-backed document providers. Android's picker can show
     // Drive/Dropbox even without the app itself having network permission.
-    final String provider=target.getAuthority();
-    if (!("com.android.externalstorage.documents".equals(provider)
-        || "com.android.providers.downloads.documents".equals(provider)
-        || "com.android.providers.media.documents".equals(provider))) {
+    if (!isLocalDocument(target)) {
       destroyPassword();
       showMessage("Выбери локальную память телефона (например, Загрузки), а не Google Drive или другой облачный сервис.");
       return;
