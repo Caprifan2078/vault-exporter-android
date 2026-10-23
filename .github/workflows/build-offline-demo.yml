@@ -83,8 +83,8 @@ jobs:
             </application>
           </manifest>
           XML
-          if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y ffmpeg; fi
-          ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=0x113355:s=160x160:d=1:r=4' -c:v mpeg4 -q:v 12 -pix_fmt yuv420p -movflags +faststart -y srcapp/app/src/main/assets/demo_round.mp4
+          base64 -d demo/synthetic_video.mp4.b64 > srcapp/app/src/main/assets/demo_round.mp4
+          test "$(wc -c < srcapp/app/src/main/assets/demo_round.mp4)" -eq 2374
           ! grep -q 'android.permission.INTERNET' srcapp/app/src/main/AndroidManifest.xml
           ! grep -R 'TdGateway\|TdNative\|SessionSecrets' srcapp/app/src/main/java
       - name: Compile APK
