@@ -1,0 +1,97 @@
+name: Build Vault Offline Demo APK (NO Telegram access)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'demo/**'
+      - '.github/workflows/build-offline-demo.yml'
+      - 'Vault-Exporter-Android-v09-source.zip'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Verify source and generate standalone demo project
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '6aa2c1c5805b6044b98a7182b5dcd3cbcd80683429cd1d916779463b047fcef5  Vault-Exporter-Android-v09-source.zip' | sha256sum -c -
+          mkdir -p /tmp/source srcapp/app/src/main/java/org/vault/exporter srcapp/app/src/main/assets
+          unzip -q Vault-Exporter-Android-v09-source.zip -d /tmp/source
+          ROOT=/tmp/source/Vault-Exporter-Android-v09
+          cp "$ROOT"/app/src/main/java/org/vault/exporter/ChunkedVault.java srcapp/app/src/main/java/org/vault/exporter/
+          cp "$ROOT"/app/src/main/java/org/vault/exporter/ArchiveWriter.java srcapp/app/src/main/java/org/vault/exporter/
+          cp "$ROOT"/app/src/main/java/org/vault/exporter/ArchiveVerifier.java srcapp/app/src/main/java/org/vault/exporter/
+          cp demo/MainActivity.java srcapp/app/src/main/java/org/vault/exporter/
+          printf "pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\n" > srcapp/settings.gradle
+          printf "dependencyResolutionManagement { repositories { google(); mavenCentral() } }\nrootProject.name='VaultOfflineDemo'\ninclude ':app'\n" >> srcapp/settings.gradle
+          printf "plugins { id 'com.android.application' version '8.6.1' apply false }\n" > srcapp/build.gradle
+          printf "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\nandroid.useAndroidX=true\n" > srcapp/gradle.properties
+          cat > srcapp/app/build.gradle <<'GRADLE'
+          plugins { id 'com.android.application' }
+          android {
+            namespace 'org.vault.exporter'
+            compileSdk 35
+            defaultConfig {
+              applicationId 'org.vault.exporter.offlinedemo'
+              minSdk 26
+              targetSdk 35
+              versionCode 1
+              versionName '1.0-offline-demo'
+            }
+            compileOptions {
+              sourceCompatibility JavaVersion.VERSION_17
+              targetCompatibility JavaVersion.VERSION_17
+            }
+          }
+          GRADLE
+          cat > srcapp/app/src/main/AndroidManifest.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <application android:allowBackup="false" android:fullBackupContent="false"
+              android:usesCleartextTraffic="false" android:label="Vault Offline Demo"
+              android:theme="@android:style/Theme.Material.Light.NoActionBar">
+              <activity android:name=".MainActivity" android:exported="true">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN" />
+                  <category android:name="android.intent.category.LAUNCHER" />
+                </intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          XML
+          command -v ffmpeg || sudo apt-get update -qq && sudo apt-get install -y ffmpeg
+          ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=0x113355:s=160x160:d=1:r=4' -c:v mpeg4 -q:v 12 -pix_fmt yuv420p -movflags +faststart -y srcapp/app/src/main/assets/demo_round.mp4
+          ! grep -q 'android.permission.INTERNET' srcapp/app/src/main/AndroidManifest.xml
+          ! grep -R 'TdGateway\|TdNative\|SessionSecrets' srcapp/app/src/main/java
+      - name: Compile APK
+        run: gradle -p srcapp :app:assembleDebug --no-daemon --stacktrace
+      - name: Validate APK permission and assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=srcapp/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -l "$APK" | grep 'assets/demo_round.mp4'
+          sdkmanager 'build-tools;35.0.0'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK" | tee /tmp/vault-perms.txt
+          ! grep -E 'INTERNET|ACCESS_NETWORK_STATE|READ_CONTACTS|READ_SMS' /tmp/vault-perms.txt
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vault-Offline-Demo-APK
+          path: srcapp/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+          if-no-files-found: error
