@@ -31,7 +31,7 @@ jobs:
           assert 'long probe=s.cursor-1;' in content
           assert 'HistoryCursor.select(s.cursor,rawIds)' in content
           assert 'HistoryCursor.select(s.cursor,candidateIds)' in content
-          assert 'Конец истории не подтверждён двумя запросами' in content
+          assert 'Конец истории не подтверждён повторным запросом' in content
           print('PASS: actual v0.9 exporter cursor patch applied; NOT a real TDLib execution test')
           PY
       - name: Run 10000-message sparse pagination contract test
