@@ -1,0 +1,33 @@
+name: Inspect actual ExportEngine cursor offline
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'exporter-integration/**'
+      - '.github/workflows/test-exporter-cursor.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cursor-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate pinned exporter source and patch only expected cursor
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '6aa2c1c5805b6044b98a7182b5dcd3cbcd80683429cd1d916779463b047fcef5  Vault-Exporter-Android-v09-source.zip' | sha256sum -c -
+          unzip -q Vault-Exporter-Android-v09-source.zip -d /tmp/vault-src
+          FILE=/tmp/vault-src/Vault-Exporter-Android-v09/app/src/main/java/org/vault/exporter/ExportEngine.java
+          python3 exporter-integration/patch_export_engine.py "$FILE"
+          python3 - "$FILE" <<'PY'
+          from pathlib import Path
+          import sys
+          content=Path(sys.argv[1]).read_text()
+          assert 'long nextFrom=s.cursor;' in content
+          assert 'long nextFrom=s.cursor<=1?0:s.cursor-1;' not in content
+          assert 'long probe=s.cursor-1;' in content
+          assert 'Конец истории не подтверждён двумя запросами' in content
+          print('PASS: actual v0.9 exporter cursor patch applied; NOT a real TDLib execution test')
+          PY
