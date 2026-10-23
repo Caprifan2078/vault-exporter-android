@@ -94,6 +94,24 @@ public final class TestRealExportEngine {
     ok(entries==unpacked.size(),"Unexpected ZIP entries");
     JSONObject manifest=new JSONObject(new String(unpacked.get("manifest.json"),StandardCharsets.UTF_8));
     ok(manifest.getInt("messages")==250 && manifest.getInt("media_downloaded")==8,"Manifest count mismatch");
+    // A fresh export must stop rather than mark completed when cloud media is unavailable.
+    File failureRoot=Files.createTempDirectory("real-exporter-missing-media-").toFile();
+    TdGateway missing=new TdGateway(ids,failureRoot);
+    missing.failDownloadFor(503);
+    boolean mediaFailure=false;
+    try {
+      new ExportEngine(new Context(failureRoot),missing,x->{}).export(chatId,
+          new ByteArrayOutputStream(),PASS);
+    }catch(IOException expected){
+      mediaFailure=expected.getMessage().contains("503");
+    }
+    ok(mediaFailure,"Incomplete cloud media was silently accepted");
+    // Restore connectivity; encrypted staging must remain resumable.
+    TdGateway recovered=new TdGateway(ids,failureRoot);
+    ExportEngine.Summary recovery=new ExportEngine(new Context(failureRoot),recovered,x->{})
+       .export(chatId,new ByteArrayOutputStream(),PASS);
+    ok(recovery.messages==250 && recovery.media==8 && recovery.historyFinished,
+       "Failed media download was not safely resumable");
     System.out.println("PASS: real ExportEngine with fake TDLib: 250 sparse messages, 8 media formats, interrupted/resumed history, encrypted TVA, exact media bytes/sha256 and manifest; pages="+pages);
   }
 }
