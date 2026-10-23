@@ -26,6 +26,26 @@ public class TestHistoryCursor {
    try{HistoryCursor.select(0,invalid);}catch(java.io.IOException expected){rejected=true;}
    check(rejected,"invalid TDLib response accepted");
   }
-  System.out.println("PASS: 10000 sparse IDs, "+pages+" short pages; no omissions/duplicates, invalid pages fail closed");
+  // Simulate a killed exporter: persist the last completed-page cursor and
+  // a durable set of staged IDs, then resume from the same checkpoint.
+  Set<Long> resumedExported=new HashSet<>();
+  long savedCursor=0;
+  int restarts=0;
+  for(int pageIndex=0;resumedExported.size()<ids.length;pageIndex++){
+    int start=0;
+    if(savedCursor>0)while(start<ids.length&&ids[start]>savedCursor)start++;
+    long[] answer=Arrays.copyOfRange(ids,start,Math.min(ids.length,start+2+(pageIndex%13)));
+    HistoryCursor.Selection choice=HistoryCursor.select(savedCursor,answer);
+    check(choice.indices.length>0,"resume stopped early");
+    Set<Long> onPage=new HashSet<>();
+    for(int n:choice.indices)check(onPage.add(answer[n]),"duplicate within checkpoint");
+    resumedExported.addAll(onPage);
+    savedCursor=choice.nextCursor; // checkpoint only AFTER this page is staged
+    if(pageIndex%27==0) { restarts++; } // reopen with the last committed cursor
+    check(pageIndex<15_000,"stalled resume");
+  }
+  check(resumedExported.size()==ids.length,"lost data after restart");
+  check(resumedExported.equals(exported),"restart diverged from uninterrupted export");
+  System.out.println("PASS: 10000 sparse IDs, "+pages+" short pages; no omissions/duplicates, restart checkpoints and invalid pages fail closed");
  }
 }
