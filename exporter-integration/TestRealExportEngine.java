@@ -46,7 +46,7 @@ public final class TestRealExportEngine {
     ExportEngine.Summary summary=new ExportEngine(ctx,resumed,x->{}).export(chatId,output,PASS);
     ok(summary.historyFinished,"History was not marked complete");
     ok(summary.messages==250,"Incomplete history count "+summary.messages);
-    ok(summary.media==1,"Media missing "+summary.media);
+    ok(summary.media==8,"Media missing "+summary.media);
     int entries=ArchiveVerifier.verify(new ByteArrayInputStream(output.toByteArray()),PASS);
     Map<String,byte[]> unpacked=unpack(output.toByteArray());
     Set<Long> actual=new HashSet<>();int pages=0,mediaItems=0;
@@ -65,7 +65,7 @@ public final class TestRealExportEngine {
     }
     ok(actual.size()==ids.length,"Missing messages "+(ids.length-actual.size()));
     for(long id:ids)ok(actual.contains(id),"Missing "+id);
-    ok(mediaItems==1,"Wrong media entries "+mediaItems);
+    ok(mediaItems==8,"Wrong media entries "+mediaItems);
     ok(index.contains("sha256"),"No media hash index");
     String[] mediaRows=index.split("\\n");
     int checked=0;
@@ -81,11 +81,11 @@ public final class TestRealExportEngine {
       StringBuilder hex=new StringBuilder();
       for(byte b:sha)hex.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
       ok(hex.toString().equals(ref.getString("sha256")),"Media hash mismatch");
-      ok(new String(bytes,StandardCharsets.UTF_8).equals("OggS fake voice data"),
-        "Wrong voice data contents");
+      ok(Arrays.equals(bytes,TdGateway.contentFor(ref.getInt("file_id"))),
+        "Wrong media bytes for file "+ref.getInt("file_id"));
       checked++;
     }
-    ok(checked==1,"Unexpected indexed media count");
+    ok(checked==8,"Unexpected indexed media count");
     boolean denied=false;
     try{ArchiveVerifier.verify(new ByteArrayInputStream(output.toByteArray()),
        "definitely-wrong-password".toCharArray());}
@@ -93,7 +93,7 @@ public final class TestRealExportEngine {
     ok(denied,"Encrypted export readable with incorrect password");
     ok(entries==unpacked.size(),"Unexpected ZIP entries");
     JSONObject manifest=new JSONObject(new String(unpacked.get("manifest.json"),StandardCharsets.UTF_8));
-    ok(manifest.getInt("messages")==250 && manifest.getInt("media_downloaded")==1,"Manifest count mismatch");
-    System.out.println("PASS: actual ExportEngine with fake TDLib: 250 sparse messages, staged media, crash/restart, encrypted TVA, authenticated ZIP, exact IDs and manifest; pages="+pages);
+    ok(manifest.getInt("messages")==250 && manifest.getInt("media_downloaded")==8,"Manifest count mismatch");
+    System.out.println("PASS: real ExportEngine with fake TDLib: 250 sparse messages, 8 media formats, interrupted/resumed history, encrypted TVA, exact media bytes/sha256 and manifest; pages="+pages);
   }
 }
