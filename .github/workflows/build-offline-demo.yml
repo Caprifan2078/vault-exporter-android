@@ -46,6 +46,7 @@ jobs:
           cp "$ROOT"/app/src/main/java/org/vault/exporter/ArchiveWriter.java srcapp/app/src/main/java/org/vault/exporter/
           cp "$ROOT"/app/src/main/java/org/vault/exporter/ArchiveVerifier.java srcapp/app/src/main/java/org/vault/exporter/
           cp demo/MainActivity.java srcapp/app/src/main/java/org/vault/exporter/
+          cp demo/DemoArchiveAudit.java srcapp/app/src/main/java/org/vault/exporter/
           printf "pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\n" > srcapp/settings.gradle
           printf "dependencyResolutionManagement { repositories { google(); mavenCentral() } }\nrootProject.name='VaultOfflineDemo'\ninclude ':app'\n" >> srcapp/settings.gradle
           printf "plugins { id 'com.android.application' version '8.6.1' apply false }\n" > srcapp/build.gradle
@@ -59,8 +60,8 @@ jobs:
               applicationId 'org.vault.exporter.offlinedemo'
               minSdk 26
               targetSdk 35
-              versionCode 1
-              versionName '1.0-offline-demo'
+              versionCode 2
+              versionName '1.1-offline-verified'
             }
             compileOptions {
               sourceCompatibility JavaVersion.VERSION_17
@@ -88,6 +89,17 @@ jobs:
           test -s srcapp/app/src/main/assets/demo_round.mp4
           ! grep -q 'android.permission.INTERNET' srcapp/app/src/main/AndroidManifest.xml
           ! grep -R 'TdGateway\|TdNative\|SessionSecrets' srcapp/app/src/main/java
+      - name: Verify synthetic export and reject corruption (no Telegram)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vault-audit-classes
+          javac -d /tmp/vault-audit-classes \
+            srcapp/app/src/main/java/org/vault/exporter/ChunkedVault.java \
+            srcapp/app/src/main/java/org/vault/exporter/ArchiveWriter.java \
+            srcapp/app/src/main/java/org/vault/exporter/DemoArchiveAudit.java \
+            demo/RunDemoArchiveAuditTests.java
+          java -Xmx320m -cp /tmp/vault-audit-classes RunDemoArchiveAuditTests
       - name: Compile APK
         run: gradle -p srcapp :app:assembleDebug --no-daemon --stacktrace
       - name: Validate APK permission and assets
