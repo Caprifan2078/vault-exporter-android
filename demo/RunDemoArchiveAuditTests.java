@@ -46,6 +46,17 @@ public final class RunDemoArchiveAuditTests {
     try{verify(x);throw new AssertionError("Accepted bad archive: "+reason);}
     catch(IOException expected){ /* invalid archive correctly rejected */ }
   }
+  private static byte[] customMetadata(byte[] metadata) throws Exception {
+    char[] pass="offline-audit-test-password".toCharArray();
+    try {
+      ByteArrayOutputStream output=new ByteArrayOutputStream();
+      try(ArchiveWriter writer=new ArchiveWriter(output,pass)){
+        writer.writeBytes("messages/page-000001.jsonl",metadata);
+        writer.writeBytes("manifest.json",("{\"schema\":\"tg-vault-v1\",\"synthetic\":true,\"messages\":1,\"media\":0}").getBytes(StandardCharsets.UTF_8));
+      }
+      return output.toByteArray();
+    }finally{Arrays.fill(pass,'\0');}
+  }
   public static void main(String[] args)throws Exception{
     byte[] good=archive(120,false,false,false,false);
     verify(good);
@@ -61,6 +72,8 @@ public final class RunDemoArchiveAuditTests {
     catch(Exception expected){denied=true;}
     finally { Arrays.fill(wrong,'\0'); }
     check(denied,"Wrong password unexpectedly accepted");
+    rejects("malformed UTF-8",customMetadata(new byte[]{'{','"','i','d','"',':','1',',','"',(byte)0xc3,(byte)0x28,'"','}',10}));
+    rejects("missing id",customMetadata("{\"text\":\"no id\"}\n".getBytes(StandardCharsets.UTF_8)));
     byte[] corrupt=good.clone();corrupt[corrupt.length/2]^=0x55;
     rejects("encrypted tampering",corrupt);
     rejects("encrypted truncation",Arrays.copyOf(good,good.length-6));
