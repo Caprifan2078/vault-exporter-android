@@ -1,0 +1,55 @@
+name: Offline tests of exporter source (NO Telegram login)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify source ZIP integrity and extract
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP=Vault-Exporter-Android-v09-source.zip
+          test -f "$ZIP" || { echo "Upload the source ZIP to the private repository to enable tests."; exit 1; }
+          printf '%s  %s\n' '6aa2c1c5805b6044b98a7182b5dcd3cbcd80683429cd1d916779463b047fcef5' "$ZIP" | sha256sum -c -
+          python3 - <<'PY'
+          import zipfile,pathlib
+          archive=zipfile.ZipFile('Vault-Exporter-Android-v09-source.zip')
+          root=pathlib.Path('project').resolve()
+          for info in archive.infolist():
+              name=pathlib.PurePosixPath(info.filename)
+              if '..' in name.parts or name.is_absolute():
+                  raise SystemExit('Unsafe path in source archive')
+              normalized=pathlib.PurePosixPath(*name.parts[1:])
+              if normalized.parts and not info.is_dir():
+                  dst=root.joinpath(*normalized.parts)
+                  dst.parent.mkdir(parents=True,exist_ok=True)
+                  dst.write_bytes(archive.read(info))
+          PY
+      - name: Run offline safety tests
+        working-directory: project
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/security_gate.py
+          mkdir -p build/testclasses
+          javac -d build/testclasses \
+            app/src/main/java/org/vault/exporter/ChunkedVault.java \
+            app/src/main/java/org/vault/exporter/ArchiveWriter.java \
+            app/src/main/java/org/vault/exporter/ArchiveVerifier.java \
+            app/src/main/java/org/vault/exporter/ResumeStore.java \
+            app/src/main/java/org/vault/exporter/TelegramRateLimit.java \
+            tests/RunCryptoTests.java tests/RunResumeTests.java tests/RunPipelineTests.java tests/RunRateLimitTests.java
+          for test in RunCryptoTests RunResumeTests RunPipelineTests RunRateLimitTests; do
+            java -cp build/testclasses "$test"
+          done
