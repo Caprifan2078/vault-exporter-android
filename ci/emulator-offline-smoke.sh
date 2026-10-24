@@ -62,6 +62,30 @@ assert any('Соединение с Telegram не выполняется' in t f
 print('PASS: offline-only welcome and demo dialog')
 PY
 adb shell input keyevent KEYCODE_BACK
+# Verify the real JNI bridge and official TDLib client lifecycle, no authentication.
+capture_ui /tmp/vault-after-demo.xml
+python3 - /tmp/vault-after-demo.xml >/tmp/tdlib-tap.txt <<'PY'
+import sys,re,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for n in root.iter('node'):
+    if 'Проверить нативную TDLib (офлайн)' in n.get('text',''):
+        m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',n.get('bounds',''))
+        if m:
+            a,b,c,d=map(int,m.groups())
+            print((a+c)//2,(b+d)//2)
+            break
+else: raise AssertionError('Native diagnostic button not visible in debug/test build')
+PY
+read -r X Y </tmp/tdlib-tap.txt
+adb shell input tap "$X" "$Y"
+sleep 3
+capture_ui /tmp/vault-native-probe.xml
+python3 - /tmp/vault-native-probe.xml <<'PY'
+import sys,xml.etree.ElementTree as ET
+texts=[n.get('text','') for n in ET.parse(sys.argv[1]).getroot().iter('node')]
+assert any('TDLIB_OFFLINE_PROBE_PASS' in t for t in texts), 'JNI TDLib offline probe failed or did not complete: '+repr(texts[-12:])
+print('PASS: native libtdjson client create, close and receive using real JNI offline')
+PY
 adb shell am force-stop "$APP_ID"
 adb logcat -d -v brief >/tmp/vault-smoke-logcat.txt
 if grep -E 'FATAL EXCEPTION|UnsatisfiedLinkError|No implementation found for' /tmp/vault-smoke-logcat.txt; then
