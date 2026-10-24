@@ -166,6 +166,8 @@ public final class ExportEngine {
   private static byte[] bytes(StringBuilder builder){return builder.toString().getBytes(StandardCharsets.UTF_8);}
   public Summary export(long chatId,OutputStream output,char[] password) throws Exception {
     JSONObject chat=safeRead(req("getChat","chat_id",chatId),30);
+    if (!chat.has("id") || chat.optLong("id") != chatId)
+      throw new IOException("TDLib вернула другой чат при проверке выбранной переписки");
     if(chat.optBoolean("has_protected_content",false))throw new SecurityException("Сохранение содержимого этого чата ограничено");
     if("chatTypeSecret".equals(object(chat,"type")==null?"":object(chat,"type").optString("@type")))
       throw new SecurityException("Облачный API не экспортирует секретные чаты");
@@ -186,6 +188,8 @@ public final class ExportEngine {
         for(int i=0;i<messages.length();i++){
           JSONObject msg=messages.optJSONObject(i);
           if(msg==null)throw new IOException("TDLib вернула неполное сообщение");
+          if (!msg.has("chat_id") || msg.optLong("chat_id") != chatId)
+            throw new IOException("TDLib вернула сообщение другого чата: экспорт остановлен без потери прогресса");
           rawIds[i]=msg.optLong("id");
         }
         HistoryCursor.Selection selection=HistoryCursor.select(s.cursor,rawIds);
@@ -228,6 +232,8 @@ public final class ExportEngine {
           for(int i=0;i<candidates.length();i++){
             JSONObject candidate=candidates.optJSONObject(i);
             if(candidate==null)throw new IOException("Недопустимый элемент истории");
+            if (!candidate.has("chat_id") || candidate.optLong("chat_id") != chatId)
+              throw new IOException("TDLib вернула сообщение другого чата при восстановлении курсора");
             candidateIds[i]=candidate.optLong("id");
           }
           HistoryCursor.Selection lowerSelection=HistoryCursor.select(s.cursor,candidateIds);
