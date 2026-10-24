@@ -141,6 +141,35 @@ public final class TestHardenedExportEngine {
     ByteArrayOutputStream ordinaryArchive=new ByteArrayOutputStream();
     send(ordinaryRoot,ordinary,chat,ordinaryArchive);
     checkArchive(ordinaryArchive.toByteArray(),shortIds,8);
+    // All three TDLib history paths must refuse data belonging to another chat.
+    File metadataRoot=Files.createTempDirectory("hardened-wrong-chat-meta-").toFile();
+    TdGateway wrongMetadata=new TdGateway(shortIds,metadataRoot);
+    wrongMetadata.misrouteChatMetadata();
+    boolean rejectedMetadata=false;
+    try{send(metadataRoot,wrongMetadata,chat,new ByteArrayOutputStream());}
+    catch(IOException expected){rejectedMetadata=expected.getMessage().contains("другой чат");}
+    yes(rejectedMetadata,"Wrong getChat metadata accepted");
+    File misrouteRoot=Files.createTempDirectory("hardened-wrong-chat-history-").toFile();
+    TdGateway wrongMessage=new TdGateway(shortIds,misrouteRoot);
+    wrongMessage.misrouteHistoryMessageAt(11);
+    boolean rejectedMessage=false;
+    try{send(misrouteRoot,wrongMessage,chat,new ByteArrayOutputStream());}
+    catch(IOException expected){rejectedMessage=expected.getMessage().contains("другого чата");}
+    yes(rejectedMessage,"Cross-chat history accepted");
+    ByteArrayOutputStream afterMisroute=new ByteArrayOutputStream();
+    send(misrouteRoot,new TdGateway(shortIds,misrouteRoot),chat,afterMisroute);
+    checkArchive(afterMisroute.toByteArray(),shortIds,8);
+    File probeRoot=Files.createTempDirectory("hardened-wrong-chat-probe-").toFile();
+    TdGateway wrongProbe=new TdGateway(shortIds,probeRoot);
+    wrongProbe.misrouteStalledProbe();
+    boolean rejectedProbe=false;
+    try{send(probeRoot,wrongProbe,chat,new ByteArrayOutputStream());}
+    catch(IOException expected){rejectedProbe=expected.getMessage().contains("другого чата");}
+    yes(rejectedProbe,"Cross-chat stalled probe accepted");
+    ByteArrayOutputStream afterProbe=new ByteArrayOutputStream();
+    send(probeRoot,new TdGateway(shortIds,probeRoot),chat,afterProbe);
+    checkArchive(afterProbe.toByteArray(),shortIds,8);
+    System.out.println("PASS: getChat, history, stalled probe wrong-chat rejection and safe resume");
     System.out.println("PASS strict content coverage: three unknown media variants and rich previews fail closed; progress resumes; known contact succeeds");
     System.out.printf(Locale.ROOT,"PASS Hardened ExportEngine+TVS2+strict verifier: 250 and 2000 messages, eight media kinds, three outages, media retry, interrupted finalization, SHA-256, wrong password; bytes=%d%n",large.size());
   }
