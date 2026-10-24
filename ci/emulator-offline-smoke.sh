@@ -71,7 +71,7 @@ import re, sys, xml.etree.ElementTree as ET
 root=ET.parse(sys.argv[1]).getroot()
 for n in root.iter('node'):
     if 'Создать проверочный архив .tva (офлайн)' in n.get('text',''):
-        m=re.match(r'\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]',n.get('bounds',''))
+        m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',n.get('bounds',''))
         if m:
             a,b,c,d=map(int,m.groups()); print((a+c)//2,(b+d)//2); break
 else: raise AssertionError('Real encrypted offline archive button missing')
