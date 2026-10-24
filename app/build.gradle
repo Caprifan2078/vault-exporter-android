@@ -3,6 +3,11 @@ plugins { id 'com.android.application' }
 // Safe default: API access is directed ONLY to Telegram test data centers.
 // A production-capable binary requires deliberate, separate build approval.
 def telegramEnvironment = providers.gradleProperty('telegramEnvironment').orElse('test').get()
+// Fail closed if someone attempts to assemble the test-data-center variant using
+// production configuration. This is NOT a production release channel.
+if (gradle.startParameter.taskNames.any { it.toLowerCase(java.util.Locale.ROOT).contains('testdc') }
+        && telegramEnvironment != 'test')
+    throw new GradleException('testDc APK must always use telegramEnvironment=test')
 def productionApproved = providers.gradleProperty('approveProductionBuild').orElse('false').get() == 'true'
 if (!(telegramEnvironment in ['test', 'production']))
     throw new GradleException('telegramEnvironment must be test or production')
@@ -41,6 +46,19 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug { minifyEnabled false }
+        // Developer-only network test build: a SEPARATE app, isolated from both
+        // production Telegram and the strictly offline screenshot/debug demo.
+        // Always targets Telegram TEST data centers, never production.
+        testDc {
+            initWith release
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            applicationIdSuffix '.testnet'
+            versionNameSuffix '-testdc'
+            matchingFallbacks = ['release']
+            buildConfigField 'boolean', 'TELEGRAM_TEST_DC', 'true'
+            buildConfigField 'boolean', 'ALLOW_PRODUCTION', 'false'
+        }
     }
     packaging { jniLibs { useLegacyPackaging true } }
 }
