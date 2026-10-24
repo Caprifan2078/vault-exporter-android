@@ -133,7 +133,7 @@ public final class MainActivity extends Activity {
       } catch(Exception e) {
         try{getContentResolver().delete(destination,null,null);}catch(Exception ignored){}
         showStatus("Не получилось создать или проверить учебный архив. Проверь свободное место.");
-      } finally {Arrays.fill(password,'\\0');}
+      } finally {Arrays.fill(password,'\0');}
     });
   }
   /**
