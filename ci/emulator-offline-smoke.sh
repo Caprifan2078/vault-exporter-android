@@ -39,6 +39,8 @@ texts=[n.get('text','') for n in root.iter('node')]
 assert any('Vault Exporter' in t for t in texts), 'Welcome title absent'
 assert any('ТЕСТ' in t.upper() and 'TELEGRAM' in t.upper() for t in texts), 'Test DC notice absent'
 assert not any('Подключено напрямую' in t for t in texts), 'Unexpected authenticated state'
+assert not any('Подключить тестовый Telegram' in t for t in texts), 'Network connect button visible in offline demo'
+assert any('СТРОГО ОФЛАЙН-ДЕМО' in t for t in texts), 'Mandatory offline notice absent'
 for n in root.iter('node'):
     if 'Посмотреть, как работает экспорт' in n.get('text',''):
         m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',n.get('bounds',''))

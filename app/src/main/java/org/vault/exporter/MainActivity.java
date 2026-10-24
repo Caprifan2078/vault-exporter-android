@@ -63,7 +63,11 @@ public final class MainActivity extends Activity {
     button("Посмотреть, как работает экспорт (офлайн)", this::showOfflineDemo);
     if (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)
       button("Проверить нативную TDLib (офлайн)", this::probeNativeTdlibOffline);
-    button(BuildConfig.TELEGRAM_TEST_DC ? "Подключить тестовый Telegram" : "Подключить настоящий Telegram", this::askBeforeConnect);
+    if (!BuildConfig.DEBUG) {
+      button(BuildConfig.TELEGRAM_TEST_DC ? "Подключить тестовый Telegram" : "Подключить настоящий Telegram", this::askBeforeConnect);
+    } else {
+      message("СТРОГО ОФЛАЙН-ДЕМО: доступ к Интернету заблокирован разрешениями Android. Вход в Telegram отключён.");
+    }
     message("Экспорт не запускается автоматически. Не требуется удалять или отключать основной Telegram.");
   }
   private void showOfflineDemo() {
@@ -122,6 +126,7 @@ public final class MainActivity extends Activity {
     });
   }
   private void askBeforeConnect() {
+    if (BuildConfig.DEBUG) { showStatus("В демонстрационной сборке доступ к Telegram отключён."); return; }
     if (td != null) { showStatus("Подключение уже началось."); return; }
     if (!BuildConfig.TELEGRAM_TEST_DC && !BuildConfig.ALLOW_PRODUCTION) {
       showStatus("Подключение к основному Telegram запрещено конфигурацией этой сборки.");
@@ -140,6 +145,7 @@ public final class MainActivity extends Activity {
         (d, which) -> beginConnect()).show();
   }
   private void beginConnect() {
+    if (BuildConfig.DEBUG) { showStatus("В демонстрационной сборке подключение запрещено."); return; }
     clearUi(); message("Соединяемся с " + (BuildConfig.TELEGRAM_TEST_DC ? "тестовым Telegram" : "основным Telegram") + "…");
     showStatus("Инициализация TDLib по вашему запросу…");
     worker.execute(() -> {

@@ -82,15 +82,22 @@ jobs:
           unzip -Z1 "$APK" | grep -Eq '^classes[0-9]*\.dex$'
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
           "$AAPT" dump badging "$APK" | grep -E "^package: name='org.vault.exporter.sandbox'"
+          "$AAPT" dump permissions "$APK" > /tmp/vault-effective-permissions.txt
+          if grep -Fq 'android.permission.INTERNET' /tmp/vault-effective-permissions.txt; then
+            echo 'ABORT: debug demo still has Android INTERNET permission'
+            cat /tmp/vault-effective-permissions.txt
+            exit 67
+          fi
+          echo 'PASS: Android manifest has no INTERNET permission'
           BUILDCONFIG=app/build/generated/source/buildConfig/debug/org/vault/exporter/BuildConfig.java
           test -f "$BUILDCONFIG"
           grep -Eq 'TELEGRAM_TEST_DC = true;' "$BUILDCONFIG"
           grep -Eq 'ALLOW_PRODUCTION = false;' "$BUILDCONFIG"
           sha256sum "$APK" > APK_SHA256.txt
-          printf '%s\n' 'NOT A RELEASE: TEST DATA CENTERS ONLY' \
-            'Invalid developer credentials; login cannot succeed.' \
-            'No Telegram account connected or tested; emulator startup not tested.' \
-            'Do not install as a trusted exporter.' > NOT_READY_FOR_INSTALLATION.txt
+          printf '%s\n' 'OFFLINE DEMO ONLY: Android INTERNET permission removed.' \
+            'Telegram connection button disabled in the debug UI and handler.' \
+            'Developer credentials are invalid placeholders. Login is impossible.' \
+            'Not a functional Telegram exporter; this APK cannot download chats.' > NOT_READY_FOR_INSTALLATION.txt
           echo 'PASS: sandbox APK assembled, inspected; Android runtime not yet validated'
       - name: Save short-lived internal artifact, NOT A RELEASE
         uses: actions/upload-artifact@v4
