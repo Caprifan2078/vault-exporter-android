@@ -16,7 +16,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: QUARANTINED-sandbox-APK-NOT-FOR-INSTALLATION
-          run-id: '40121200973'
+          run-id: '40130522655'
           repository: adolfmerkel196-ux/vault-exporter-android
           github-token: ${{ github.token }}
           path: quarantine
