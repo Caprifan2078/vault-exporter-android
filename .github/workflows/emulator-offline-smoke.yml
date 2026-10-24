@@ -1,0 +1,50 @@
+name: Offline Android emulator smoke (no login)
+on:
+  push:
+    branches: [work/vault-exporter-replayed-20261024]
+    paths: ['ci/emulator-offline-smoke.sh', '.github/workflows/emulator-offline-smoke.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: QUARANTINED-sandbox-APK-NOT-FOR-INSTALLATION
+          run-id: '40112102596'
+          repository: adolfmerkel196-ux/vault-exporter-android
+          github-token: ${{ github.token }}
+          path: quarantine
+      - name: Validate downloaded archive hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s quarantine/app-debug.apk
+          (cd quarantine && sha256sum -c APK_SHA256.txt)
+      - name: Install emulator SDK components
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="$ANDROID_HOME"
+          SDK_MANAGER=$(find "$SDK_ROOT/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -1)
+          yes | "$SDK_MANAGER" --licenses >/dev/null || true
+          "$SDK_MANAGER" --sdk_root="$SDK_ROOT" --install 'platforms;android-35' 'platform-tools' 'emulator' 'system-images;android-35;google_apis;arm64-v8a'
+      - name: Boot ARM64 emulator and validate offline screens
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          APK_UNDER_TEST: ${{ github.workspace }}/quarantine/app-debug.apk
+        with:
+          api-level: 35
+          target: google_apis
+          arch: arm64-v8a
+          profile: pixel_6
+          ram-size: 2048M
+          heap-size: 256M
+          disable-animations: true
+          emulator-boot-timeout: 900
+          script: bash ci/emulator-offline-smoke.sh
