@@ -99,6 +99,20 @@ jobs:
             'Developer credentials are invalid placeholders. Login is impossible.' \
             'Not a functional Telegram exporter; this APK cannot download chats.' > NOT_READY_FOR_INSTALLATION.txt
           echo 'PASS: sandbox APK assembled, inspected; Android runtime not yet validated'
+      - name: Compile test-DC-only network variant using INVALID placeholder credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon -PtelegramEnvironment=test -PtelegramApiId=1 \
+            -PtelegramApiHash=00000000000000000000000000000000 :app:assembleTestDc
+          TEST_APK=app/build/outputs/apk/testDc/app-testDc.apk
+          test -s "$TEST_APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
+          "$AAPT" dump badging "$TEST_APK" | grep -F "package: name='org.vault.exporter.sandbox.testnet'"
+          "$AAPT" dump permissions "$TEST_APK" | grep -F 'android.permission.INTERNET'
+          # Network-capable but no valid developer credentials: NEVER upload.
+          rm -f "$TEST_APK"
+          echo 'PASS: network-enabled TEST DC variant compiles but is not distributed'
       - name: Save short-lived internal artifact, NOT A RELEASE
         uses: actions/upload-artifact@v4
         with:
