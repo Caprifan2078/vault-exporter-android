@@ -85,6 +85,8 @@ capture_ui /tmp/vault-native-probe.xml
 python3 - /tmp/vault-native-probe.xml <<'PY'
 import sys,xml.etree.ElementTree as ET
 texts=[n.get('text','') for n in ET.parse(sys.argv[1]).getroot().iter('node')]
+assert any('Диагностика TDLib' in t for t in texts), 'Diagnostic dialog not displayed on button tap: '+repr(texts[-12:])
+assert any('Готово!' in t and 'Движок TDLib' in t for t in texts), 'No visible result in dialog: '+repr(texts[-12:])
 assert any('TDLIB_OFFLINE_PROBE_PASS' in t for t in texts), 'JNI TDLib offline probe failed or did not complete: '+repr(texts[-12:])
 print('PASS: native libtdjson client create, close and receive using real JNI offline')
 PY
@@ -112,6 +114,7 @@ capture_ui /tmp/vault-restarted-probe.xml
 python3 - /tmp/vault-restarted-probe.xml <<'PY'
 import sys,xml.etree.ElementTree as ET
 texts=[n.get('text','') for n in ET.parse(sys.argv[1]).getroot().iter('node')]
+assert any('Диагностика TDLib' in t for t in texts), 'Diagnostic modal absent after restart'
 assert any('TDLIB_OFFLINE_PROBE_PASS' in t for t in texts), 'Native bridge failed after restart'
 print('PASS: TDLib JNI client reopened after process restart, offline')
 PY
