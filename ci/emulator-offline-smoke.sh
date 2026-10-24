@@ -98,7 +98,7 @@ texts=[n.get('text','') for n in root.iter('node')]
 assert any('Vault Exporter' in t for t in texts), 'Restart failed'
 for n in root.iter('node'):
     if 'Проверить нативную TDLib (офлайн)' in n.get('text',''):
-        m=re.match(r'\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]',n.get('bounds',''))
+        m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',n.get('bounds',''))
         if m:
             a,b,c,d=map(int,m.groups()); print((a+c)//2,(b+d)//2); break
 else: raise AssertionError('Native probe missing after process restart')
