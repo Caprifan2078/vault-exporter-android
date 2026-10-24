@@ -5,7 +5,7 @@ plugins { id 'com.android.application' }
 def telegramEnvironment = providers.gradleProperty('telegramEnvironment').orElse('test').get()
 // Fail closed if someone attempts to assemble the test-data-center variant using
 // production configuration. This is NOT a production release channel.
-if (gradle.startParameter.taskNames.any { it.toLowerCase(java.util.Locale.ROOT).contains('testdc') }
+if (gradle.startParameter.taskNames.any { it.toLowerCase(java.util.Locale.ROOT).contains('sandboxdc') }
         && telegramEnvironment != 'test')
     throw new GradleException('sandboxDc APK must always use telegramEnvironment=test')
 def productionApproved = providers.gradleProperty('approveProductionBuild').orElse('false').get() == 'true'
