@@ -7,6 +7,7 @@ public class JSONObject {
   JSONObject(Map<String,Object> map){this.map=new LinkedHashMap<>(map);}
   public JSONObject(String text){this();Parser p=new Parser(text);Object obj=p.parse();if(!(obj instanceof JSONObject j)||p.pos!=text.length())throw new JSONException("Invalid JSON object");map.putAll(j.map);}
   public JSONObject put(String key,Object value){map.put(key,value);return this;}
+  public boolean has(String key){return map.containsKey(key);}
   public JSONObject optJSONObject(String key){Object v=map.get(key);return v instanceof JSONObject?(JSONObject)v:null;}
   public JSONArray optJSONArray(String key){Object v=map.get(key);return v instanceof JSONArray?(JSONArray)v:null;}
   public String optString(String key){return optString(key,"");}
