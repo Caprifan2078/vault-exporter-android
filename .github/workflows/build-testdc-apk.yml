@@ -2,7 +2,7 @@ name: Assemble quarantined Android test-DC APK (no Telegram login)
 on:
   push:
     branches: [work/vault-exporter-replayed-20261024]
-    paths: ['.github/workflows/build-testdc-apk.yml']
+    paths: ['.github/workflows/build-testdc-apk.yml', 'app/**']
   workflow_dispatch:
 permissions:
   contents: read
