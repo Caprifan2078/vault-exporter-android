@@ -104,8 +104,8 @@ jobs:
         run: |
           set -euo pipefail
           gradle --no-daemon -PtelegramEnvironment=test -PtelegramApiId=1 \
-            -PtelegramApiHash=00000000000000000000000000000000 :app:assembleTestDc
-          TEST_APK=app/build/outputs/apk/testDc/app-testDc.apk
+            -PtelegramApiHash=00000000000000000000000000000000 :app:assembleSandboxDc
+          TEST_APK=app/build/outputs/apk/sandboxDc/app-sandboxDc.apk
           test -s "$TEST_APK"
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
           "$AAPT" dump badging "$TEST_APK" | grep -F "package: name='org.vault.exporter.sandbox.testnet'"
