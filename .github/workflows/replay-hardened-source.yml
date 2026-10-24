@@ -1,0 +1,55 @@
+name: Replay hardened source and test offline
+on:
+  push:
+    branches: [work/vault-exporter-integrity-20261024]
+    paths:
+      - 'handoff/**'
+      - '.github/workflows/replay-hardened-source.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify exact original source
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '6aa2c1c5805b6044b98a7182b5dcd3cbcd80683429cd1d916779463b047fcef5  Vault-Exporter-Android-v09-source.zip' | sha256sum -c -
+          unzip -q Vault-Exporter-Android-v09-source.zip -d "$RUNNER_TEMP/vault"
+          echo "SOURCE=$RUNNER_TEMP/vault/Vault-Exporter-Android-v09" >> "$GITHUB_ENV"
+      - name: Apply seven reviewed patches without fuzz or snapshot documents
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 handoff/replay_code_patches.py "$SOURCE" \
+            handoff/patches/{01-staging,02-verifier,03-integration,04-tdlib-reliability,05-jni-media,06-build-safety,07-concurrency}.patch
+      - name: Run hardened exporter and archive integration tests without Telegram
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE"
+          bash tests/RUN_TESTS_OFFLINE.sh
+          bash integration-jvm/RUN_INTEGRATION_JVM.sh
+          bash transport-jvm/RUN_TRANSPORT_JVM.sh
+          bash native-host-test/RUN_NATIVE_HOST_TEST.sh
+      - name: Package replayed source for inspection only
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf "$RUNNER_TEMP/vault-replayed-source.tar.gz" --exclude='./build' -C "$SOURCE" .
+          sha256sum "$RUNNER_TEMP/vault-replayed-source.tar.gz" | tee "$RUNNER_TEMP/source-sha256.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vault-hardened-source-replay-unreleased
+          path: |
+            ${{ runner.temp }}/vault-replayed-source.tar.gz
+            ${{ runner.temp }}/source-sha256.txt
+          retention-days: 7
