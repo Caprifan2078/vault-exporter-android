@@ -27,6 +27,7 @@ public final class MainActivity extends Activity {
   private boolean exporting = false;
   private volatile boolean logoutRequested = false;
   private final java.util.concurrent.atomic.AtomicBoolean initializing = new java.util.concurrent.atomic.AtomicBoolean(false);
+  private final java.util.concurrent.atomic.AtomicBoolean nativeProbeRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
   private final int CREATE_ARCHIVE = 718;
   private char[] pendingPassphrase;
   // The document picker is an asynchronous operation; preserve the original chat.
@@ -83,47 +84,75 @@ public final class MainActivity extends Activity {
    */
   private void probeNativeTdlibOffline() {
     if (!BuildConfig.DEBUG || !BuildConfig.TELEGRAM_TEST_DC || td != null || exporting) {
-      showStatus("Офлайн-диагностика недоступна в текущем режиме.");
+      new AlertDialog.Builder(this).setTitle("Диагностика TDLib")
+        .setMessage("Эта проверка доступна только в безопасном офлайн-режиме.")
+        .setPositiveButton("Понятно", null).show();
       return;
     }
+    // The previous version updated a status label near the very top of the screen:
+    // when the user tapped the middle button, it looked as if nothing happened.
+    // A modal makes the action and its result immediately visible at the tap location.
+    if (!nativeProbeRunning.compareAndSet(false, true)) {
+      new AlertDialog.Builder(this).setTitle("Диагностика TDLib")
+        .setMessage("Проверка уже выполняется. Повторно запускать её не нужно.")
+        .setPositiveButton("Понятно", null).show();
+      return;
+    }
+    final AlertDialog dialog = new AlertDialog.Builder(this)
+      .setTitle("Диагностика TDLib")
+      .setMessage("Идёт офлайн-проверка движка (до 10 секунд).\nАккаунт Telegram не подключается.")
+      .setPositiveButton("Закрыть", null).create();
+    dialog.show();
     showStatus("Проверяем двусторонний JNI/TDLib без входа…");
-    worker.execute(() -> {
-      long clientId = 0;
-      try {
-        clientId = TdNative.createClient();
-        if (clientId <= 0) throw new IllegalStateException("TDLib client creation returned zero");
-        // getAuthorizationState is safe before setTdlibParameters: no account, no phone,
-        // no database setup and no network connection is requested by this probe.
-        // In emulator CI, both Wi-Fi and mobile data are disabled.
-        String token = "vault-offline-roundtrip-" + clientId;
-        JSONObject request = TdGateway.cmd("getAuthorizationState").put("@extra", token);
-        TdNative.send(clientId, request.toString());
-        boolean gotReply = false;
-        for (int tries = 0; tries < 20; tries++) {
-          String wire = TdNative.receive(0.5);
-          if (wire == null) continue;
-          JSONObject result = new JSONObject(wire);
-          if (!token.equals(result.optString("@extra"))) continue;
-          if (result.optLong("@client_id", 0) != clientId)
-            throw new IOException("Invalid TDLib response client identity");
-          String state = result.optString("@type");
-          if (!"authorizationStateWaitTdlibParameters".equals(state))
-            throw new IOException("Unexpected unauthenticated state");
-          gotReply = true;
-          break;
+    try {
+      worker.execute(() -> {
+        long clientId = 0;
+        String result = "TDLIB_OFFLINE_PROBE_FAIL: нет корректного ответа TDLib.";
+        try {
+          clientId = TdNative.createClient();
+          if (clientId <= 0) throw new IllegalStateException("TDLib client creation returned zero");
+          // getAuthorizationState is local before TDLib parameters; no account or network.
+          String token = "vault-offline-roundtrip-" + clientId;
+          JSONObject request = TdGateway.cmd("getAuthorizationState").put("@extra", token);
+          TdNative.send(clientId, request.toString());
+          boolean gotReply = false;
+          for (int tries = 0; tries < 20; tries++) {
+            String wire = TdNative.receive(0.5);
+            if (wire == null) continue;
+            JSONObject response = new JSONObject(wire);
+            if (!token.equals(response.optString("@extra"))) continue;
+            if (response.optLong("@client_id", 0) != clientId)
+              throw new IOException("Invalid TDLib response client identity");
+            if (!"authorizationStateWaitTdlibParameters".equals(response.optString("@type")))
+              throw new IOException("Unexpected unauthenticated state");
+            gotReply = true;
+            break;
+          }
+          if (!gotReply) throw new IOException("TDLib roundtrip timed out");
+          result = "TDLIB_OFFLINE_PROBE_PASS: движок работает. Telegram не подключён.";
+        } catch (Throwable ignored) {
+          // Do not include native failure details or private payloads in the UI.
+        } finally {
+          if (clientId > 0) {
+            try { TdNative.send(clientId, "{\"@type\":\"close\"}"); }
+            catch (Throwable ignored) { /* diagnostic cleanup only */ }
+          }
+          nativeProbeRunning.set(false);
+          final String message = result;
+          showStatus(message);
+          runOnUiThread(() -> {
+            if (!isFinishing() && !isDestroyed() && dialog.isShowing()) {
+              dialog.setMessage(message.startsWith("TDLIB_OFFLINE_PROBE_PASS")
+                ? "Готово! Движок TDLib отвечает.\n\nЭто только офлайн-диагностика — переписки не загружаются.\n\n" + message
+                : "Проверка не прошла. Никаких данных Telegram не запрашивали.\n\n" + message);
+            }
+          });
         }
-        if (!gotReply) throw new IOException("TDLib roundtrip timed out");
-        showStatus("TDLIB_OFFLINE_PROBE_PASS: двусторонний JNI/TDLib, без авторизации.");
-      } catch (Throwable ignored) {
-        // Do not expose private data or native exception details in UI.
-        showStatus("TDLIB_OFFLINE_PROBE_FAIL: нет корректного ответа TDLib.");
-      } finally {
-        if (clientId > 0) {
-          try { TdNative.send(clientId, "{\"@type\":\"close\"}"); }
-          catch (Throwable ignored) { /* diagnostic cleanup only */ }
-        }
-      }
-    });
+      });
+    } catch (RuntimeException unavailable) {
+      nativeProbeRunning.set(false);
+      dialog.setMessage("Не удалось начать офлайн-проверку. Перезапусти приложение.");
+    }
   }
   private void askBeforeConnect() {
     if (BuildConfig.DEBUG) { showStatus("В демонстрационной сборке доступ к Telegram отключён."); return; }
