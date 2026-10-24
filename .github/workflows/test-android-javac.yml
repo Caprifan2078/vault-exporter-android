@@ -18,7 +18,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -34,7 +33,12 @@ jobs:
           cp exporter-integration/HistoryCursor.java "$SRC/app/src/main/java/org/vault/exporter/HistoryCursor.java"
           echo "SOURCE=$SRC" >> "$GITHUB_ENV"
       - name: Install Android compile SDK
-        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v sdkmanager
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
       - name: Compile Android Java sources only (NO APK produced)
         shell: bash
         run: |
