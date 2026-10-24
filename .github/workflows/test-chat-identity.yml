@@ -48,5 +48,10 @@ jobs:
             exporter-integration/fakes/org/vault/exporter/SessionSecrets.java \
             "$RUNNER_TEMP/fakes/org/vault/exporter/TdGateway.java" \
             "$ROOT"/{ExportEngine,HistoryCursor,ResumeStore,ArchiveWriter,ArchiveVerifier,ChunkedVault,TelegramRateLimit}.java \
-            exporter-integration/TestIdentityGuard.java
+            exporter-integration/TestIdentityGuard.java exporter-integration/TestRealExportEngine.java
           java -Xmx256m -cp "$RUNNER_TEMP/classes:$RUNNER_TEMP/org-json.jar" TestIdentityGuard
+      - name: Verify complete archive and 2000 messages after three network outages
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -Xmx512m -cp "$RUNNER_TEMP/classes:$RUNNER_TEMP/org-json.jar" TestRealExportEngine
