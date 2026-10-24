@@ -1,0 +1,510 @@
+--- old/.github/workflows/offline-security-tests.yml
++++ new/.github/workflows/offline-security-tests.yml
+@@ -1,4 +1,4 @@
+-name: Offline security and archive tests (no Telegram login)
++name: Offline hardened ExportEngine integration (no Telegram login)
+ on:
+   push:
+     branches: ['**']
+@@ -15,7 +15,7 @@
+       - uses: actions/setup-java@v4
+         with:
+           distribution: temurin
+-          java-version: '17'
++          java-version: '21'
+       - name: Test archive, semantic integrity, crash recovery and bounded heap (offline)
+         shell: bash
+-        run: bash tests/RUN_TESTS_OFFLINE.sh
++        run: bash RUN_ALL_OFFLINE.sh
+--- old/INTEGRATION_REPORT_RU.md
++++ new/INTEGRATION_REPORT_RU.md
+@@ -0,0 +1,59 @@
++# Vault Exporter Android — сквозная JVM-интеграция и новые проверки, 24.10.2026
++
++**Основа:** рабочая копия Vault Exporter v0.9, подготовленная в прошлой итерации (`Vault_Exporter_Verifier_Hardening_2026-10-24.zip`). Исходная ветка GitHub `main`: `c96f19d41da58ca78457caa6c9cdd7f694ba9afb` на момент предыдущей сверки. Главная ветка не менялась, настоящий Telegram и пользовательские данные не использовались.
++
++## Что изменено в этой итерации
++
++- Создан `integration-jvm/`: воспроизводимый сквозной тест **реальных исходников** `ExportEngine`, `ResumeStore`/`StagingCipher` (TVS2), `ArchiveWriter`/`ChunkedVault`, `HistoryCursor`, `ArchiveVerifier` и `TelegramRateLimit` с заменами только инфраструктуры (TDLib, Android `Context`, `SessionSecrets`, `org.json`).
++- Проверены 250 и 2000 искусственных сообщений с разреженными ID и перекрывающимися, заведомо короткими страницами; точное множество ID получено из результата и сверено с источником.
++- Проверены все восемь ранее поддерживаемых классов медиа: голосовое, фотография, обычное видео, видеокружок, аудиозапись, документ, анимация, стикер. Сверены действительные байты, размеры и SHA-256.
++- Проверено восстановление после трёх искусственных обрывов запросов истории, сбоя скачивания и ошибки при записи готового TVA; при повторной финализации история не запрашивается повторно.
++- Искусственно повреждён зашифрованный файл TVS2 в промежуточном хранилище: итоговый архив не может быть успешно создан.
++- Отдельный полный потоковый тест с видео размером 48 МиБ проходит при `-Xmx32m` (включая исходный `ExportEngine`, запись staging, окончательный архив, проверку архива). Этот ролик представляет однородные синтетические байты: его ZIP-сжатие существенно выше, чем у настоящего видео.
++- Дополнительно ужесточён `ArchiveVerifier`: синтаксис `participants.json` должен быть корректным JSON-массивом объектов; если в манифесте присутствует число `participants`, проверяется его соответствие содержимому. Добавлено четыре негативные фикстуры, всего 36.
++
++## Сведения о реальных проверках
++
++Все команды ниже реально были запущены в изолированном Linux JVM-окружении в эту итерацию и завершились с exit code 0:
++
++```
++bash tests/RUN_TESTS_OFFLINE.sh
++bash integration-jvm/RUN_INTEGRATION_JVM.sh
++```
++
++Ключевые строки результатов:
++
++```
++PASS 42 TVS2/JVM checks
++PASS 204083 checks: 100000 sparse IDs
++PASS 36 verifier fixtures
++PASS Hardened ExportEngine+TVS2+strict verifier: 250 and 2000 messages, eight media kinds, three outages, media retry, interrupted finalization, SHA-256, wrong password
++PASS bounded-memory real ExportEngine+TVS2+strict ArchiveVerifier: 48 MiB video @ -Xmx32m
++```
++
++Тестовая библиотека `integration-jvm/fakes/org/json` — **упрощённая тестовая замена**, не официальный Android `org.json`; поэтому это НЕ гарантия совместимости с Android JSON/TDLib. Она расположена вне `app/src/` и **не входит в Android APK**. Тестовый транспорт не делает сетевых вызовов Telegram. JVM-тесты не доказывают корректность сетевого протокола, реального авторизованного TDLib-сеанса или Android Keystore.
++
++## Что всё ещё не доказано
++
++1. Настоящая Android-сборка с официальным `libtdjson.so` и воспроизводимым native toolchain: в текущем контейнере нет Android SDK, NDK и `libtdjson.so`.
++2. Работа с Telegram Test DC (авторизация, скачивание после очистки кэша, тестовое сравнение с Telegram Desktop).
++3. Валидация количества *всех серверных* сообщений: независимая проверка архива доказывает внутреннюю согласованность записанного, но не полноту истории, возвращённой Telegram. История может измениться во время экспорта; удалённые и защищённые сообщения недоступны.
++4. Реальный сценарий 9 ГБ на физическом Android, включая нехватку места, перезагрузку, фоновую работу, энергосбережение и неполные файлы при внезапном выключении.
++5. Независимая оценка требований Telegram и риска блокировки аккаунта. Нулевой риск обещать нельзя.
++6. Официальный `org.json`/TDLib ответ может иметь особенности и варианты вложений, не покрытые искусственным транспортом. Поддержаны только перечисленные восемь классов медиа; другие типы необходимо аудировать до заявления «абсолютно все вложения».
++
++## Дополнительная проверка по официальной документации TDLib
++
++`getChatHistory(from_message_id=0)` начинает с последних сообщений. Для следующих запросов нужно передать ID последнего полученного сообщения; страницы могут быть короче запрошенного лимита и не свидетельствуют о конце истории. См. https://core.telegram.org/tdlib/getting-started и https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1get_chat_history.html . Нынешний `HistoryCursor` в этой части согласован с официальным описанием, но подтверждение окончания истории двумя пустыми ответами — выбранная эвристика программы, а не доказательство абсолютной полноты Telegram.
++
++## Запреты на данный момент
++
++- Не публиковать APK, не подключать основной аккаунт, не считать приложение полностью безопасным.
++- Не загружать содержимое частных переписок, токены или пароли в CI/GitHub.
++- Не переносить тестовые заглушки в `app/src/main` и не объединять их с реальным релизом.
++
++## Рекомендуемый следующий этап
++
++1. На изолированной CI-машине получить официальную TDLib и Android SDK, зафиксировать версии/SHA-256, проверить сборку test-DC APK, только синтетические данные.
++2. Запустить полноценные Android instrumentation/smoke проверки с официальным JSON и нативным `libtdjson.so`.
++3. Только после независимой проверки разрешений, трафика, стабильности и поведения при сбоях решать вопрос о подключении изолированного тестового аккаунта; основной аккаунт не использовать.
+--- old/README.md
++++ new/README.md
+@@ -39,3 +39,9 @@
+ ## CI без аккаунта и секретов
+ 
+ `.github/workflows/offline-security-tests.yml` запускает только локальные тесты архивирования и политики доступа при push/PR. **Telegram API ID/Hash и любые чаты не требуются.** Эта проверка должна пройти первой; сам APK появится только после сборки native TDLib и Android CI.
++
++## Обновление 24.10.2026 — сквозной тест без Telegram
++
++`bash integration-jvm/RUN_INTEGRATION_JVM.sh` реально выполняет исходный `ExportEngine` с TVS2 и строгим `ArchiveVerifier`. Тестовые заменители Android, TDLib и JSON находятся **только** в `integration-jvm/fakes/` и в Android APK не включаются. Проверены 250/2000 сообщений, восемь медиа, последовательные аварийные остановки, повторная финализация, испорченное staging и 48 МиБ при лимите памяти 32 МиБ. Подробности — `INTEGRATION_REPORT_RU.md`.
++
++`bash RUN_ALL_OFFLINE.sh` запускает старый регрессионный набор и новую сквозную интеграцию. Это ещё не настоящий запуск на Android/TDLib и не разрешение применять основной Telegram-аккаунт.
+--- old/RUN_ALL_OFFLINE.sh
++++ new/RUN_ALL_OFFLINE.sh
+@@ -0,0 +1,5 @@
++#!/usr/bin/env bash
++set -euo pipefail
++cd "$(dirname "$0")"
++bash tests/RUN_TESTS_OFFLINE.sh
++bash integration-jvm/RUN_INTEGRATION_JVM.sh
+--- old/STATUS_RU.md
++++ new/STATUS_RU.md
+@@ -8,3 +8,10 @@
+ - Аудит трафика и работа с real Android: НЕ ПРОВЕДЕНЫ.
+ - APK: НЕ СОБРАН, отсутствует native libtdjson.so и локальный Android SDK.
+ - Вопрос блокировок: ноль риска нельзя гарантировать; испытания не проводят на основном аккаунте.
++
++### Добавлено 24.10.2026
++- Сквозная JVM-интеграция *того же* `ExportEngine` с TVS2 и строгим проверяющим механизмом — **PASS**, но TDLib/Android/org.json заменены тестовыми реализациями.
++- 250/2000 сообщений с проверкой ID, восемь медиа и их SHA-256, три обрыва истории, ошибка медиа, обрыв создания .tva, повреждение staging — **PASS**.
++- 48 МиБ синтетическое видео через весь `ExportEngine` при ограничении JVM heap в 32 МиБ — **PASS**.
++- Обязательная проверка формата `participants.json` и сверка заявленного счётчика участников, если он указан: добавлены четыре отрицательных теста — **PASS**.
++- ПРИМЕЧАНИЕ: main GitHub не обновлён; исходники и тесты содержатся в данном ZIP. Android/TDLib, на реальном устройстве и с реальным аккаунтом не проверено.
+--- old/app/src/main/java/org/vault/exporter/ArchiveVerifier.java
++++ new/app/src/main/java/org/vault/exporter/ArchiveVerifier.java
+@@ -164,10 +164,27 @@
+   private static String hex(byte[] bytes){StringBuilder out=new StringBuilder(bytes.length*2);
+     for(byte b:bytes)out.append(Character.forDigit((b>>>4)&15,16)).append(Character.forDigit(b&15,16));
+     return out.toString();}
+-  private static int consumeBounded(ZipInputStream zip,int max)throws IOException {
+-    int total=0,read;byte[] buf=new byte[8192];
+-    while((read=zip.read(buf))!=-1){total+=read;if(total>max)throw new IOException("Служебная запись слишком велика");}
+-    return total;
++  /** Participants are metadata, but malformed arrays must not pass an integrity report. */
++  private static int readParticipants(ZipInputStream zip)throws IOException {
++    ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;
++    while((n=zip.read(buf))!=-1){
++      if(out.size()+n>MAX_PARTICIPANTS_BYTES)throw new IOException("Слишком много данных участников");
++      out.write(buf,0,n);
++    }
++    Json json=new Json(decode(out.toByteArray()));json.want('[');json.ws();
++    int count=0;
++    if(json.pos<json.s.length() && json.s.charAt(json.pos)==']')json.pos++;
++    else while(true){
++      json.ws();
++      if(json.pos>=json.s.length()||json.s.charAt(json.pos)!='{')throw new IOException("Неверный участник архива");
++      json.value(0);count++;
++      json.ws();if(json.pos>=json.s.length())throw new IOException("Обрезан массив участников");
++      char sep=json.s.charAt(json.pos++);
++      if(sep==']')break;
++      if(sep!=',')throw new IOException("Некорректный список участников");
++    }
++    json.ws();if(json.pos!=json.s.length())throw new IOException("Лишние байты в participants.json");
++    return count;
+   }
+   private static Map<String,Scalar> readManifest(ZipInputStream zip)throws IOException {
+     ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;
+@@ -222,7 +239,7 @@
+         e=zip.getNextEntry();
+       }
+       if(e==null||!"participants.json".equals(e.getName()))throw new IOException("Нет participants.json либо неожиданные записи");
+-      consumeBounded(zip,MAX_PARTICIPANTS_BYTES);entries++;zip.closeEntry();
++      int participants=readParticipants(zip);entries++;zip.closeEntry();
+       e=zip.getNextEntry();
+       if(e==null||!"manifest.json".equals(e.getName()))throw new IOException("Манифест отсутствует или не последняя запись");
+       Map<String,Scalar> manifest=readManifest(zip);entries++;zip.closeEntry();
+@@ -231,6 +248,9 @@
+       if(number(manifest,"media_missing",0,Long.MAX_VALUE)!=0)throw new IOException("В архиве пропущены медиа");
+       if(number(manifest,"messages",0,Long.MAX_VALUE)!=messages)throw new IOException("Число сообщений не совпадает с манифестом");
+       if(number(manifest,"media_downloaded",0,Long.MAX_VALUE)!=media)throw new IOException("Число медиа не совпадает с манифестом");
++      if(manifest.containsKey("participants") &&
++         number(manifest,"participants",0,Long.MAX_VALUE)!=participants)
++        throw new IOException("Число участников не совпадает с манифестом");
+       if(zip.getNextEntry()!=null)throw new IOException("Лишние записи после манифеста");
+       byte[] buf=new byte[65536];
+       while(decrypted.read(buf)!=-1) {/* authenticate final encrypted block */}
+--- old/integration-jvm/RUN_INTEGRATION_JVM.sh
++++ new/integration-jvm/RUN_INTEGRATION_JVM.sh
+@@ -0,0 +1,14 @@
++#!/usr/bin/env bash
++set -euo pipefail
++cd "$(dirname "$0")/.."
++OUT=build/integration-test-classes
++mkdir -p "$OUT"
++ROOT=app/src/main/java/org/vault/exporter
++javac -d "$OUT" \
++  integration-jvm/fakes/org/json/*.java \
++  integration-jvm/fakes/android/content/Context.java \
++  integration-jvm/fakes/org/vault/exporter/*.java \
++  "$ROOT"/{ExportEngine,HistoryCursor,StagingCipher,ChunkedVault,ResumeStore,ArchiveWriter,ArchiveVerifier,TelegramRateLimit}.java \
++  integration-jvm/TestHardenedExportEngine.java integration-jvm/TestEngineBoundedMemory.java
++java -Xmx128m -cp "$OUT" TestHardenedExportEngine
++java -Xmx32m -cp "$OUT" TestEngineBoundedMemory
+--- old/integration-jvm/TestEngineBoundedMemory.java
++++ new/integration-jvm/TestEngineBoundedMemory.java
+@@ -0,0 +1,22 @@
++import org.vault.exporter.*;
++import android.content.Context;
++import java.io.*;
++import java.nio.file.*;
++/** Actual ExportEngine and verified TVA output with a streaming 48-MiB media blob under 32 MiB heap. */
++public final class TestEngineBoundedMemory {
++  public static void main(String[] args)throws Exception{
++    File root=Files.createTempDirectory("hardened-engine-memory-").toFile();
++    File result=new File(root,"out.tva");
++    long[] ids=new long[80];for(int i=0;i<ids.length;i++)ids[i]=80_000-i*19L;
++    TdGateway fake=new TdGateway(ids,root);fake.useLargeSyntheticVideo();
++    char[] pass="bounded-memory-demo".toCharArray();
++    try(OutputStream output=new BufferedOutputStream(new FileOutputStream(result))){
++      ExportEngine.Summary s=new ExportEngine(new Context(root),fake,x->{}).export(4321,output,pass);
++      if(s.messages!=80||s.media!=8||!s.historyFinished)throw new AssertionError("wrong export summary");
++    }
++    try(InputStream input=new FileInputStream(result)){
++      if(ArchiveVerifier.verify(input,pass)<10)throw new AssertionError("wrong entry count");
++    }
++    System.out.printf("PASS bounded-memory real ExportEngine+TVS2+strict ArchiveVerifier: 48 MiB video @ -Xmx32m, TVA bytes=%d%n",result.length());
++  }
++}
+--- old/integration-jvm/TestHardenedExportEngine.java
++++ new/integration-jvm/TestHardenedExportEngine.java
+@@ -0,0 +1,113 @@
++import org.vault.exporter.*;
++import org.json.*;
++import android.content.Context;
++import java.io.*;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.*;
++import java.util.*;
++import java.security.MessageDigest;
++import java.util.zip.*;
++/** Real patched ExportEngine+ResumeStore(TVS2)+strict ArchiveVerifier vs fake TDLib. */
++public final class TestHardenedExportEngine {
++  static final char[] PASS="reproducible-test-passphrase".toCharArray();
++  static void yes(boolean ok,String reason){if(!ok)throw new AssertionError(reason);}
++  static void send(File root,TdGateway td,long chat,OutputStream output)throws Exception{
++    new ExportEngine(new Context(root),td,message->{}).export(chat,output,PASS);
++  }
++  static long[] ids(int n) {long[] a=new long[n];for(int i=0;i<n;i++)a[i]=200_000-i*31L;return a;}
++  static Map<String,byte[]> unpack(byte[] blob)throws Exception{
++    Map<String,byte[]> ret=new LinkedHashMap<>();
++    try(ZipInputStream zip=new ZipInputStream(new ChunkedVault.Decrypt(new ByteArrayInputStream(blob),PASS))){
++      ZipEntry entry;byte[] buf=new byte[65536];
++      while((entry=zip.getNextEntry())!=null){ByteArrayOutputStream out=new ByteArrayOutputStream();int read;
++        while((read=zip.read(buf))!=-1)out.write(buf,0,read);
++        yes(ret.put(entry.getName(),out.toByteArray())==null,"duplicate archive entry");zip.closeEntry();
++      }
++    }
++    return ret;
++  }
++  static String hash(byte[] data)throws Exception {
++    byte[] digest=MessageDigest.getInstance("SHA-256").digest(data);StringBuilder s=new StringBuilder();for(byte b:digest)s.append(String.format(Locale.ROOT,"%02x",b&255));return s.toString();
++  }
++  static void checkArchive(byte[] blob,long[] expected,int media)throws Exception{
++    int n=ArchiveVerifier.verify(new ByteArrayInputStream(blob),PASS);
++    Map<String,byte[]> files=unpack(blob);yes(n==files.size(),"archive entry count");
++    HashSet<Long> actual=new HashSet<>();int countMedia=0;
++    for(var file:files.entrySet()){
++      if(file.getKey().startsWith("messages/")){
++        for(String line:new String(file.getValue(),StandardCharsets.UTF_8).split("\\n")){
++          if(!line.isEmpty())yes(actual.add(new JSONObject(line).getLong("id")),"duplicate ID");
++        }
++      }
++      if(file.getKey().startsWith("media-index/")){
++        for(String line:new String(file.getValue(),StandardCharsets.UTF_8).split("\\n")){
++          if(line.isEmpty())continue;JSONObject row=new JSONObject(line);
++          byte[] raw=files.get(row.getString("path"));yes(raw!=null,"missing indexed media");
++          yes(raw.length==row.getLong("bytes"),"media size mismatch");
++          yes(hash(raw).equals(row.getString("sha256")),"media SHA mismatch");
++          yes(Arrays.equals(raw,TdGateway.contentFor(row.getInt("file_id"))),"wrong media bytes");
++          countMedia++;
++        }
++      }
++    }
++    yes(actual.size()==expected.length,"missing messages "+(expected.length-actual.size()));
++    for(long id:expected)yes(actual.contains(id),"missing ID "+id);
++    yes(countMedia==media,"wrong media count "+countMedia);
++    JSONObject manifest=new JSONObject(new String(files.get("manifest.json"),StandardCharsets.UTF_8));
++    yes(manifest.getInt("messages")==expected.length&&manifest.getInt("media_downloaded")==media,"manifest count mismatch");
++  }
++  public static void main(String[] args)throws Exception{
++    long chat=4321;long[] shortIds=ids(250);File root=Files.createTempDirectory("hardened-engine-short-").toFile();
++    TdGateway fails=new TdGateway(shortIds,root);fails.failOnHistoryCall(9);boolean failed=false;
++    try{send(root,fails,chat,new ByteArrayOutputStream());}
++    catch(IOException ex){failed=ex.getMessage().contains("SIMULATED_NETWORK_DROP");}
++    yes(failed,"expected history outage");
++    ByteArrayOutputStream done=new ByteArrayOutputStream();send(root,new TdGateway(shortIds,root),chat,done);
++    checkArchive(done.toByteArray(),shortIds,8);
++    boolean wrongPassword=false;try{ArchiveVerifier.verify(new ByteArrayInputStream(done.toByteArray()),"bad password".toCharArray());}catch(Exception expected){wrongPassword=true;}
++    yes(wrongPassword,"wrong password allowed");
++    // Restart when one full-resolution file is not retrievable. Page may not be committed.
++    File mediaRoot=Files.createTempDirectory("hardened-engine-media-").toFile();
++    TdGateway broken=new TdGateway(shortIds,mediaRoot);broken.failDownloadFor(503);boolean mediaFail=false;
++    try{send(mediaRoot,broken,chat,new ByteArrayOutputStream());}
++    catch(IOException ex){mediaFail=ex.getMessage().contains("503");}
++    yes(mediaFail,"missing download accepted");
++    ByteArrayOutputStream recovered=new ByteArrayOutputStream();send(mediaRoot,new TdGateway(shortIds,mediaRoot),chat,recovered);checkArchive(recovered.toByteArray(),shortIds,8);
++    // Crash in final archive output must not invalidate committed encrypted staging.
++    File finalRoot=Files.createTempDirectory("hardened-engine-finalize-").toFile();
++    final long[] created={0};boolean failedFinalize=false;
++    try{send(finalRoot,new TdGateway(shortIds,finalRoot),chat,new OutputStream(){
++      @Override public void write(int value)throws IOException {if(++created[0]>1300)throw new IOException("SIMULATED_DISK_FULL");}
++      @Override public void write(byte[] b,int off,int len)throws IOException {
++        for(int i=0;i<len;i++)write(b[off+i]);
++      }
++    });}catch(IOException expected){failedFinalize=expected.getMessage().contains("SIMULATED_DISK_FULL");}
++    yes(failedFinalize,"finalization interruption not triggered");
++    ByteArrayOutputStream rebuilt=new ByteArrayOutputStream();
++    TdGateway finalGateway=new TdGateway(shortIds,finalRoot);
++    send(finalRoot,finalGateway,chat,rebuilt);
++    yes(finalGateway.historyCalls()==0,"finalization retry fetched history again");
++    checkArchive(rebuilt.toByteArray(),shortIds,8);
++    // Bit flip in authenticated TVS2 staging must never be silently accepted.
++    Path staged=Files.walk(new File(root,"export-progress/chat-"+chat+"/media").toPath())
++      .filter(Files::isRegularFile).findFirst().orElseThrow();
++    byte[] ciphertext=Files.readAllBytes(staged);
++    yes(ciphertext.length>40,"short staging cipher fixture");
++    ciphertext[35]^=1;
++    Files.write(staged,ciphertext);
++    boolean tamperFailed=false;
++    try{send(root,new TdGateway(shortIds,root),chat,new ByteArrayOutputStream());}
++    catch(IOException ex){tamperFailed=true;}
++    yes(tamperFailed,"tampered staging passed finalization");
++    // Three failures across the SAME resume store; latest exporter must recover exact 2k message archive.
++    long[] longIds=ids(2000);File longRoot=Files.createTempDirectory("hardened-engine-many-").toFile();
++    for(int hit:new int[]{6,15,31}){
++      TdGateway flaky=new TdGateway(longIds,longRoot);flaky.failOnHistoryCall(hit);boolean stopped=false;
++      try{send(longRoot,flaky,chat,new ByteArrayOutputStream());}catch(IOException ex){stopped=ex.getMessage().contains("SIMULATED_NETWORK_DROP");}
++      yes(stopped,"expected outage at history call "+hit);
++    }
++    ByteArrayOutputStream large=new ByteArrayOutputStream();send(longRoot,new TdGateway(longIds,longRoot),chat,large);
++    checkArchive(large.toByteArray(),longIds,8);
++    System.out.printf(Locale.ROOT,"PASS Hardened ExportEngine+TVS2+strict verifier: 250 and 2000 messages, eight media kinds, three outages, media retry, interrupted finalization, SHA-256, wrong password; bytes=%d%n",large.size());
++  }
++}
+--- old/integration-jvm/fakes/android/content/Context.java
++++ new/integration-jvm/fakes/android/content/Context.java
+@@ -0,0 +1,8 @@
++package android.content;
++import java.io.File;
++public class Context {
++  private final File root;
++  public Context(File root){this.root=root;}
++  public Context getApplicationContext(){return this;}
++  public File getFilesDir(){return root;}
++}
+--- old/integration-jvm/fakes/org/json/JSONArray.java
++++ new/integration-jvm/fakes/org/json/JSONArray.java
+@@ -0,0 +1,12 @@
++package org.json;
++import java.util.*;
++public class JSONArray {
++  final List<Object> data;
++  public JSONArray() {data=new ArrayList<>();}
++  JSONArray(List<Object> data) {this.data=data;}
++  public JSONArray put(Object value) {data.add(value);return this;}
++  public int length(){return data.size();}
++  public JSONObject optJSONObject(int i) {return i>=0&&i<data.size()&&data.get(i) instanceof JSONObject ?(JSONObject)data.get(i):null;}
++  public JSONObject getJSONObject(int i) {JSONObject a=optJSONObject(i);if(a==null)throw new JSONException("Not object");return a;}
++  public String toString(){return JSONObject.format(data);}
++}
+--- old/integration-jvm/fakes/org/json/JSONException.java
++++ new/integration-jvm/fakes/org/json/JSONException.java
+@@ -0,0 +1,5 @@
++package org.json;
++public class JSONException extends RuntimeException {
++  public JSONException(String s) {super(s);}
++  public JSONException(String s,Throwable t) {super(s,t);}
++}
+--- old/integration-jvm/fakes/org/json/JSONObject.java
++++ new/integration-jvm/fakes/org/json/JSONObject.java
+@@ -0,0 +1,48 @@
++package org.json;
++import java.util.*;
++/** Test-only JSON subset. NOT shipped in Android. Independent archive verifier parses JSON itself. */
++public class JSONObject {
++  final LinkedHashMap<String,Object> map;
++  public JSONObject(){map=new LinkedHashMap<>();}
++  JSONObject(Map<String,Object> map){this.map=new LinkedHashMap<>(map);}
++  public JSONObject(String text){this();Parser p=new Parser(text);Object obj=p.parse();if(!(obj instanceof JSONObject j)||p.pos!=text.length())throw new JSONException("Invalid JSON object");map.putAll(j.map);}
++  public JSONObject put(String key,Object value){map.put(key,value);return this;}
++  public JSONObject optJSONObject(String key){Object v=map.get(key);return v instanceof JSONObject?(JSONObject)v:null;}
++  public JSONArray optJSONArray(String key){Object v=map.get(key);return v instanceof JSONArray?(JSONArray)v:null;}
++  public String optString(String key){return optString(key,"");}
++  public String optString(String key,String fallback){Object v=map.get(key);return v==null?fallback:String.valueOf(v);}
++  public boolean optBoolean(String key,boolean fallback){Object v=map.get(key);return v instanceof Boolean?(Boolean)v:fallback;}
++  public int optInt(String key){return optInt(key,0);}
++  public int optInt(String key,int fallback){Object v=map.get(key);return v instanceof Number?((Number)v).intValue():fallback;}
++  public long optLong(String key){return optLong(key,0);}
++  public long optLong(String key,long fallback){Object v=map.get(key);return v instanceof Number?((Number)v).longValue():fallback;}
++  public long getLong(String key){if(!map.containsKey(key)||!(map.get(key) instanceof Number))throw new JSONException("Missing number: "+key);return ((Number)map.get(key)).longValue();}
++  public int getInt(String key){return Math.toIntExact(getLong(key));}
++  public String getString(String key){if(!map.containsKey(key))throw new JSONException("Missing: "+key);return String.valueOf(map.get(key));}
++  @Override public String toString(){return format(map);}
++  public String toString(int spaces){return toString();}
++  static String format(Object value){
++    if(value==null)return "null";
++    if(value instanceof JSONObject j)return format(j.map);
++    if(value instanceof JSONArray j)return format(j.data);
++    if(value instanceof Map<?,?> m){StringBuilder b=new StringBuilder("{");boolean first=true;for(var e:m.entrySet()){if(!first)b.append(',');first=false;b.append(format(e.getKey().toString())).append(':').append(format(e.getValue()));}return b.append('}').toString();}
++    if(value instanceof List<?> l){StringBuilder b=new StringBuilder("[");boolean first=true;for(Object v:l){if(!first)b.append(',');first=false;b.append(format(v));}return b.append(']').toString();}
++    if(value instanceof String s){StringBuilder b=new StringBuilder("\"");for(char c:s.toCharArray()){switch(c){case '"':b.append("\\\"");break;case '\\':b.append("\\\\");break;case '\n':b.append("\\n");break;case '\r':b.append("\\r");break;case '\t':b.append("\\t");break;default:if(c<32)b.append(String.format("\\u%04x",(int)c));else b.append(c);}}return b.append('"').toString();}
++    return String.valueOf(value);
++  }
++  private static class Parser{
++    final String s;int pos=0;
++    Parser(String s){this.s=s;}
++    void ws(){while(pos<s.length()&&Character.isWhitespace(s.charAt(pos)))pos++;}
++    char ch(){if(pos>=s.length())throw new JSONException("Unexpected EOF");return s.charAt(pos);}
++    void take(char c){ws();if(ch()!=c)throw new JSONException("Expected "+c+" at "+pos);pos++;}
++    Object parse(){ws();Object v=value();ws();return v;}
++    Object value(){ws();char c=ch();if(c=='{')return object();if(c=='[')return array();if(c=='"')return string();if(c=='t'&&s.startsWith("true",pos)){pos+=4;return true;}if(c=='f'&&s.startsWith("false",pos)){pos+=5;return false;}if(c=='n'&&s.startsWith("null",pos)){pos+=4;return null;}
++      int st=pos;while(pos<s.length()&&"-0123456789.eE+".indexOf(s.charAt(pos))>=0)pos++;if(pos==st)throw new JSONException("Unexpected token at "+pos);
++      try{String num=s.substring(st,pos);if(num.contains(".")||num.contains("e")||num.contains("E"))return Double.valueOf(num);return Long.valueOf(num);}catch(NumberFormatException x){throw new JSONException("Bad number",x);}
++    }
++    JSONObject object(){take('{');JSONObject j=new JSONObject();ws();if(ch()=='}'){pos++;return j;}while(true){String key=string();take(':');j.put(key,value());ws();if(ch()=='}'){pos++;return j;}take(',');} }
++    JSONArray array(){take('[');JSONArray a=new JSONArray();ws();if(ch()==']'){pos++;return a;}while(true){a.put(value());ws();if(ch()==']'){pos++;return a;}take(',');} }
++    String string(){take('"');StringBuilder b=new StringBuilder();while(true){char c=ch();pos++;if(c=='"')return b.toString();if(c=='\\'){char x=ch();pos++;switch(x){case 'n':b.append('\n');break;case 't':b.append('\t');break;case 'r':b.append('\r');break;case 'b':b.append('\b');break;case 'f':b.append('\f');break;case 'u':if(pos+4>s.length())throw new JSONException("unicode escape");b.append((char)Integer.parseInt(s.substring(pos,pos+4),16));pos+=4;break;default:b.append(x);}}else b.append(c);} }
++  }
++}
+--- old/integration-jvm/fakes/org/vault/exporter/SessionSecrets.java
++++ new/integration-jvm/fakes/org/vault/exporter/SessionSecrets.java
+@@ -0,0 +1,8 @@
++package org.vault.exporter;
++import android.content.Context;
++import java.util.Arrays;
++/** Test-only 32-byte secret; no Android Keystore or production credentials. */
++public final class SessionSecrets{
++  public SessionSecrets(Context context){}
++  public byte[] getOrCreate(){byte[] secret=new byte[32];Arrays.fill(secret,(byte)0x5c);return secret;}
++}
+--- old/integration-jvm/fakes/org/vault/exporter/TdGateway.java
++++ new/integration-jvm/fakes/org/vault/exporter/TdGateway.java
+@@ -0,0 +1,74 @@
++package org.vault.exporter;
++import org.json.*;
++import java.util.*;
++import java.io.*;
++import java.nio.charset.StandardCharsets;
++/** Fake transport, no Telegram connection. Mimics short pages with cursor overlap. */
++public final class TdGateway {
++  final long[] ids;final File root;
++  int calls,failHistoryAt,failFileId,failChatAt;
++  boolean inconsistentEmpty,protectedChat,secretChat,largeVideo;
++  public TdGateway(long[] ids,File root){this.ids=ids;this.root=root;}
++  public void failOnHistoryCall(int n){failHistoryAt=n;}
++  public void failDownloadFor(int id){failFileId=id;}
++  public void failChatCall(int n){failChatAt=n;}
++  public int historyCalls(){return calls;}
++  public void useLargeSyntheticVideo(){largeVideo=true;}
++  public static JSONObject cmd(String type){return new JSONObject().put("@type",type);}
++  public static byte[] contentFor(int id){
++    return switch(id){
++      case 501->"OggS synthetic voice data".getBytes(StandardCharsets.UTF_8);
++      case 502->new byte[]{(byte)0xff,(byte)0xd8,(byte)0xff,(byte)0xe0,1,2,3,4};
++      case 503,504,507->new byte[]{0,0,0,16,102,116,121,112,105,115,111,109,1,2,3,4};
++      case 505->"ID3 synthetic audio".getBytes(StandardCharsets.UTF_8);
++      case 506->"%PDF-1.4\nsynthetic doc".getBytes(StandardCharsets.UTF_8);
++      case 508->"RIFF1234WEBPsynthetic".getBytes(StandardCharsets.UTF_8);
++      default->throw new IllegalArgumentException("No such media "+id);
++    };
++  }
++  private static JSONObject file(int id){return new JSONObject().put("id",id);}
++  private JSONObject content(int position,long id){
++    switch(position){
++      case 3:return new JSONObject().put("@type","messageVoiceNote").put("voice_note",new JSONObject().put("voice",file(501)).put("mime_type","audio/ogg"));
++      case 9:return new JSONObject().put("@type","messagePhoto").put("photo",new JSONObject().put("sizes",new JSONArray().put(new JSONObject().put("width",64).put("height",64).put("photo",file(599))).put(new JSONObject().put("width",1920).put("height",1080).put("photo",file(502)))));
++      case 17:return new JSONObject().put("@type","messageVideo").put("video",new JSONObject().put("video",file(503)).put("mime_type","video/mp4"));
++      case 25:return new JSONObject().put("@type","messageVideoNote").put("video_note",new JSONObject().put("video",file(504)).put("mime_type","video/mp4"));
++      case 33:return new JSONObject().put("@type","messageAudio").put("audio",new JSONObject().put("audio",file(505)).put("mime_type","audio/mpeg"));
++      case 41:return new JSONObject().put("@type","messageDocument").put("document",new JSONObject().put("document",file(506)).put("file_name","notes.pdf").put("mime_type","application/pdf"));
++      case 49:return new JSONObject().put("@type","messageAnimation").put("animation",new JSONObject().put("animation",file(507)).put("mime_type","video/mp4"));
++      case 57:return new JSONObject().put("@type","messageSticker").put("sticker",new JSONObject().put("sticker",file(508)).put("mime_type","image/webp"));
++      default:return new JSONObject().put("@type","messageText").put("text",new JSONObject().put("text","Synthetic #"+id));
++    }
++  }
++  public JSONObject await(JSONObject req,long timeout)throws Exception {
++    String type=req.optString("@type");
++    if(type.equals("getChat")){
++      if(protectedChat)return new JSONObject().put("has_protected_content",true);
++      return new JSONObject().put("title","Synthetic").put("has_protected_content",false).put("type",new JSONObject().put("@type",secretChat?"chatTypeSecret":"chatTypePrivate"));
++    }
++    if(type.equals("getUser"))return new JSONObject().put("first_name","Test");
++    if(type.equals("getChatHistory")){
++      calls++;if(calls==failHistoryAt)throw new IOException("SIMULATED_NETWORK_DROP");
++      long from=req.optLong("from_message_id");int limit=req.optInt("limit",100);
++      JSONArray arr=new JSONArray();int start=0;
++      if(from>0)while(start<ids.length&&ids[start]>from)start++;
++      if(start>=ids.length)return new JSONObject().put("messages",arr);
++      for(int i=start;i<ids.length&&i<start+Math.min(7,limit);i++)
++        arr.put(new JSONObject().put("id",ids[i]).put("sender_id",new JSONObject().put("@type","messageSenderUser").put("user_id",55)).put("content",content(i,ids[i])));
++      return new JSONObject().put("messages",arr);
++    }
++    if(type.equals("downloadFile")){
++      int id=req.getInt("file_id");if(id==failFileId)throw new IOException("SIMULATED_MEDIA_DOWNLOAD_ERROR");
++      File f=new File(root,"tdlib/files/file-"+id+".bin");f.getParentFile().mkdirs();
++      try(OutputStream out=new FileOutputStream(f)){
++        if(largeVideo && id==503){
++          byte[] chunk=new byte[65536];Arrays.fill(chunk,(byte)0x6a);
++          for(int i=0;i<48*1024*1024/chunk.length;i++)out.write(chunk);
++        }else out.write(contentFor(id));
++      }
++      return new JSONObject().put("local",new JSONObject().put("is_downloading_completed",true).put("path",f.getCanonicalPath()));
++    }
++    if(type.equals("deleteFile"))return new JSONObject().put("@type","ok");
++    throw new IOException("Unsupported fake call: "+type);
++  }
++}
+--- old/tests/RunSemanticArchiveVerifierTests.java
++++ new/tests/RunSemanticArchiveVerifierTests.java
+@@ -87,6 +87,10 @@
+     a=fixture();change(a,1,index(100,501,".jpg",PHOTO).replace("\"sha256\"","\"digest\""));reject(a,"missing SHA256");
+     a=fixture();change(a,1,index(100,501,".jpg",PHOTO).replace("\"bytes\":7","\"bytes\":\"7\""));reject(a,"string length field");
+     a=fixture();change(a,0,"{\"id\":100}\n{\"id\":90,\"text\":\""+"x".repeat(2*1024*1024)+"\"}\n");reject(a,"oversized JSONL row");
++    a=fixture();change(a,6,"not-json");reject(a,"malformed participants JSON");
++    a=fixture();change(a,6,"[{\"id\":1},]");reject(a,"participants trailing comma");
++    a=fixture();change(a,6,"[42]");reject(a,"nonobject participants");
++    a=fixture();change(a,7,manifest(3,2).replace("\"schema\"", "\"participants\":2,\"schema\""));reject(a,"participant count mismatch");
+   }
+   public static void main(String[] args)throws Exception {
+     testCorruption();
