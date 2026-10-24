@@ -1,6 +1,9 @@
 name: Manually package TEST-DC-only exporter with developer API keys
 on:
   workflow_dispatch:
+  push:
+    branches: [work/vault-exporter-replayed-20261024]
+    paths: ['ci/request-network-testdc-build.txt']
 permissions:
   contents: read
 jobs:
