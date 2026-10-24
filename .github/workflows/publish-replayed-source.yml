@@ -1,0 +1,55 @@
+name: Publish verified replay to isolated source branch
+on:
+  push:
+    branches: [work/vault-exporter-integrity-20261024]
+    paths:
+      - '.github/workflows/publish-replayed-source.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Reconstruct and test source before any Git write
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '6aa2c1c5805b6044b98a7182b5dcd3cbcd80683429cd1d916779463b047fcef5  Vault-Exporter-Android-v09-source.zip' | sha256sum -c -
+          unzip -q Vault-Exporter-Android-v09-source.zip -d "$RUNNER_TEMP/src"
+          SOURCE="$RUNNER_TEMP/src/Vault-Exporter-Android-v09"
+          python3 handoff/replay_code_patches.py "$SOURCE" \
+            handoff/patches/{01-staging,02-verifier,03-integration,04-tdlib-reliability,05-jni-media,06-build-safety,07-concurrency}.patch
+          ( cd "$SOURCE" && bash tests/RUN_TESTS_OFFLINE.sh && bash integration-jvm/RUN_INTEGRATION_JVM.sh )
+          echo "SOURCE=$SOURCE" >> "$GITHUB_ENV"
+      - name: Publish ONLY new unprotected development branch (no APK)
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET='work/vault-exporter-replayed-20261024'
+          test "$TARGET" != main
+          test "$GITHUB_REF_NAME" = 'work/vault-exporter-integrity-20261024'
+          if git ls-remote --exit-code --heads origin "$TARGET" >/dev/null 2>&1; then
+            echo 'Target branch already exists; refusing overwrite' >&2
+            exit 1
+          fi
+          rm -rf "$SOURCE/build"
+          git switch --orphan "$TARGET"
+          cp -a "$SOURCE"/. ./
+          git add -A
+          if git diff --cached --name-only | grep -E '(^|/)(\.env|id_rsa|private[-_]key|secrets?\.json)$'; then
+            echo 'Unexpected secret-named file; abort' >&2
+            exit 1
+          fi
+          git -c user.name='Vault CI' -c user.email='vault-ci@users.noreply.github.com' \
+            commit -m 'Import offline-tested source replay; not an Android release'
+          git push origin "HEAD:refs/heads/$TARGET"
+          echo "SOURCE_BRANCH=$TARGET"
