@@ -1,0 +1,66 @@
+name: Build pinned official TDLib arm64 offline
+on:
+  push:
+    branches: [work/vault-exporter-integrity-20261024]
+    paths: ['.github/workflows/build-official-tdlib-arm64.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  official-tdlib:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct pinned Vault source and inspect preparation script
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci-rebuild/reconstruct.py "$GITHUB_WORKSPACE" "$RUNNER_TEMP/vault-rebuilt"
+          python3 -m py_compile "$RUNNER_TEMP/vault-rebuilt/Vault-Exporter-Android-v09/scripts/prepare_tdlib_android.py"
+          python3 -m py_compile "$RUNNER_TEMP/vault-rebuilt/Vault-Exporter-Android-v09/scripts/verify_tdlib_elf.py"
+      - name: Download official pinned TDLib source (never a user account)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PIN=ea3f69ce11aef458bfbb09869b809ede4447486f
+          mkdir -p "$RUNNER_TEMP/td"
+          git -C "$RUNNER_TEMP/td" init -q
+          git -C "$RUNNER_TEMP/td" remote add origin https://github.com/tdlib/td.git
+          git -C "$RUNNER_TEMP/td" fetch --depth 1 origin "$PIN"
+          git -C "$RUNNER_TEMP/td" checkout --detach -q FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/td" rev-parse HEAD)" = "$PIN"
+          python3 "$RUNNER_TEMP/vault-rebuilt/Vault-Exporter-Android-v09/scripts/prepare_tdlib_android.py" "$RUNNER_TEMP/td/example/android/Dockerfile"
+      - name: Compile JSON TDLib only for Android arm64-v8a
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/td/example/android"
+          docker build --build-arg COMMIT_HASH=ea3f69ce11aef458bfbb09869b809ede4447486f \
+            --build-arg TDLIB_INTERFACE=JSON \
+            --output "type=local,dest=$RUNNER_TEMP/tdlib-output" .
+          mkdir -p "$RUNNER_TEMP/tdlib-expanded"
+          while IFS= read -r -d '' archive; do
+            unzip -oq "$archive" -d "$RUNNER_TEMP/tdlib-expanded"
+          done < <(find "$RUNNER_TEMP/tdlib-output" -type f -name '*.zip' -print0)
+          SO=$(find "$RUNNER_TEMP/tdlib-output" "$RUNNER_TEMP/tdlib-expanded" \
+            -type f -path '*/arm64-v8a/libtdjson.so' -print -quit)
+          test -n "$SO"
+          mkdir -p "$GITHUB_WORKSPACE/tdlib-verified/arm64-v8a"
+          install -m 0644 "$SO" "$GITHUB_WORKSPACE/tdlib-verified/arm64-v8a/libtdjson.so"
+      - name: Inspect ELF header, exported JSON functions and dependent libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$RUNNER_TEMP/vault-rebuilt/Vault-Exporter-Android-v09/scripts/verify_tdlib_elf.py" \
+            tdlib-verified/arm64-v8a/libtdjson.so --output tdlib-verified/tdlib-abi.json
+          sha256sum tdlib-verified/arm64-v8a/libtdjson.so > tdlib-verified/SHA256SUMS.txt
+          printf '%s\n' 'source_repo=tdlib/td' \
+            'source_sha=ea3f69ce11aef458bfbb09869b809ede4447486f' \
+            'interface=JSON' 'abi=arm64-v8a' 'telegram_login_performed=false' \
+            'android_apk_built=false' > tdlib-verified/BUILD_PROVENANCE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: official-tdlib-arm64-UNTESTED-RUNTIME
+          path: tdlib-verified/
+          retention-days: 3
