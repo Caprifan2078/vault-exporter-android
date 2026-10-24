@@ -82,18 +82,42 @@ public final class MainActivity extends Activity {
       showStatus("Офлайн-диагностика недоступна в текущем режиме.");
       return;
     }
-    showStatus("Проверяем загрузку нативной TDLib без авторизации…");
+    showStatus("Проверяем двусторонний JNI/TDLib без входа…");
     worker.execute(() -> {
+      long clientId = 0;
       try {
-        long clientId = TdNative.createClient();
+        clientId = TdNative.createClient();
         if (clientId <= 0) throw new IllegalStateException("TDLib client creation returned zero");
-        // Closing a new client does not authorize it or initialize an account.
-        TdNative.send(clientId, "{\"@type\":\"close\"}");
-        TdNative.receive(0.25);
-        showStatus("TDLIB_OFFLINE_PROBE_PASS: JNI, клиент и close; без входа.");
+        // getAuthorizationState is safe before setTdlibParameters: no account, no phone,
+        // no database setup and no network connection is requested by this probe.
+        // In emulator CI, both Wi-Fi and mobile data are disabled.
+        String token = "vault-offline-roundtrip-" + clientId;
+        JSONObject request = TdGateway.cmd("getAuthorizationState").put("@extra", token);
+        TdNative.send(clientId, request.toString());
+        boolean gotReply = false;
+        for (int tries = 0; tries < 20; tries++) {
+          String wire = TdNative.receive(0.5);
+          if (wire == null) continue;
+          JSONObject result = new JSONObject(wire);
+          if (!token.equals(result.optString("@extra"))) continue;
+          if (result.optLong("@client_id", 0) != clientId)
+            throw new IOException("Invalid TDLib response client identity");
+          String state = result.optString("@type");
+          if (!"authorizationStateWaitTdlibParameters".equals(state))
+            throw new IOException("Unexpected unauthenticated state");
+          gotReply = true;
+          break;
+        }
+        if (!gotReply) throw new IOException("TDLib roundtrip timed out");
+        showStatus("TDLIB_OFFLINE_PROBE_PASS: двусторонний JNI/TDLib, без авторизации.");
       } catch (Throwable ignored) {
-        // Keep exception content out of UI: native failure details may be unsafe.
-        showStatus("TDLIB_OFFLINE_PROBE_FAIL: ошибка загрузки JNI или вызова TDLib.");
+        // Do not expose private data or native exception details in UI.
+        showStatus("TDLIB_OFFLINE_PROBE_FAIL: нет корректного ответа TDLib.");
+      } finally {
+        if (clientId > 0) {
+          try { TdNative.send(clientId, "{\"@type\":\"close\"}"); }
+          catch (Throwable ignored) { /* diagnostic cleanup only */ }
+        }
       }
     });
   }
