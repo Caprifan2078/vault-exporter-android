@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+test -s "$APK_UNDER_TEST" || { echo "Missing quarantined APK"; exit 10; }
+APP_ID=org.vault.exporter.sandbox
+# No Telegram login and no network traffic from the tested app.
+adb shell svc wifi disable || true
+adb shell svc data disable || true
+echo "Emulated platform and native ABI list:"
+adb shell getprop ro.build.version.release
+adb shell getprop ro.product.cpu.abilist
+adb shell getprop ro.dalvik.vm.native.bridge
+if ! adb install -r "$APK_UNDER_TEST"; then
+  echo "FAIL: emulator does not support ARM64-only application or installation failed."
+  exit 43
+fi
+test "$(adb shell pm list packages "$APP_ID" | tr -d '\r')" = "package:$APP_ID"
+adb logcat -c
+adb shell am start -W -n org.vault.exporter.sandbox/org.vault.exporter.MainActivity
+sleep 4
+PID="$(adb shell pidof "$APP_ID" | tr -d '\r')"
+test -n "$PID" || { echo "FAIL: app crashed on launch"; exit 44; }
+echo "PASS: app process running $PID"
+capture_ui() {
+  local out="$1" ok=0
+  for attempt in 1 2 3 4 5; do
+    if adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 &&
+       adb exec-out cat /sdcard/window.xml > "$out" && test -s "$out"; then
+      ok=1; break
+    fi
+    sleep 2
+  done
+  test "$ok" = 1 || { echo "FAIL: UI hierarchy inaccessible"; exit 45; }
+}
+capture_ui /tmp/vault-welcome.xml
+python3 - /tmp/vault-welcome.xml > /tmp/offline-button-location.txt <<'PY'
+import sys, re, xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+texts=[n.get('text','') for n in root.iter('node')]
+assert any('Vault Exporter' in t for t in texts), 'Welcome title absent'
+assert any('ТЕСТ' in t.upper() and 'TELEGRAM' in t.upper() for t in texts), 'Test DC notice absent'
+assert not any('Подключено напрямую' in t for t in texts), 'Unexpected authenticated state'
+for n in root.iter('node'):
+    if 'Посмотреть, как работает экспорт' in n.get('text',''):
+        m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',n.get('bounds',''))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups())
+            print((x1+x2)//2,(y1+y2)//2)
+            break
+else:
+    raise AssertionError('Offline-demo button missing')
+PY
+read -r X Y < /tmp/offline-button-location.txt
+adb shell input tap "$X" "$Y"
+sleep 2
+capture_ui /tmp/vault-offline-demo.xml
+python3 - /tmp/vault-offline-demo.xml <<'PY'
+import sys, xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+texts=[n.get('text','') for n in root.iter('node')]
+assert any('Офлайн-демонстрация' in t for t in texts), 'Offline demo dialog not opened'
+assert any('Соединение с Telegram не выполняется' in t for t in texts), 'Missing no-connection disclaimer'
+print('PASS: offline-only welcome and demo dialog')
+PY
+adb shell input keyevent KEYCODE_BACK
+adb shell am force-stop "$APP_ID"
+adb logcat -d -v brief >/tmp/vault-smoke-logcat.txt
+if grep -E 'FATAL EXCEPTION|UnsatisfiedLinkError|No implementation found for' /tmp/vault-smoke-logcat.txt; then
+  echo "FAIL: Android fatal or JNI errors detected"
+  exit 46
+fi
+echo "PASS: emulator install, offline launch and demo without account or network"
