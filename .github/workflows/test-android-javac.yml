@@ -31,6 +31,17 @@ jobs:
           python3 exporter-integration/patch_export_engine.py "$SRC/app/src/main/java/org/vault/exporter/ExportEngine.java"
           python3 exporter-integration/guard_chat_identity.py "$SRC/app/src/main/java/org/vault/exporter/ExportEngine.java"
           cp exporter-integration/HistoryCursor.java "$SRC/app/src/main/java/org/vault/exporter/HistoryCursor.java"
+          # Pin a v0.9 Gradle Groovy-DSL CMake syntax fix, tested only here.
+          python3 - "$SRC/app/build.gradle" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1])
+          before="externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt' version '3.22.1' } }"
+          after="externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt'; version '3.22.1' } }"
+          src=p.read_text()
+          assert src.count(before)==1, "Unexpected upstream Gradle revision"
+          p.write_text(src.replace(before,after))
+          PY
           echo "SOURCE=$SRC" >> "$GITHUB_ENV"
       - name: Install Android compile SDK
         shell: bash
