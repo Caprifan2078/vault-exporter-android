@@ -1,0 +1,77 @@
+name: Reconstruct hardened Vault core and run offline tests
+on:
+  push:
+    branches: [work/vault-exporter-integrity-20261024]
+    paths:
+      - 'ci-rebuild/**'
+      - '.github/workflows/rebuild-hardened-core.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Reconstruct checked source (seven patches, no fuzzy hunks)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci-rebuild/reconstruct.py "$GITHUB_WORKSPACE" "$RUNNER_TEMP/vault-rebuilt"
+      - name: Run all offline regression and integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/vault-rebuilt/Vault-Exporter-Android-v09"
+          bash RUN_ALL_OFFLINE.sh
+      - name: Apply chat-identity guard on reconstructed engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/vault-rebuilt/Vault-Exporter-Android-v09"
+          python3 exporter-integration/guard_chat_identity.py "$ROOT/app/src/main/java/org/vault/exporter/ExportEngine.java"
+          python3 - "$ROOT/app/src/main/java/org/vault/exporter/ExportEngine.java" <<'PY'
+          from pathlib import Path
+          import sys
+          s=Path(sys.argv[1]).read_text()
+          for marker in ('if (!chat.has("id")','if (!msg.has("chat_id")',
+                         'if (!candidate.has("chat_id")'):
+              assert s.count(marker)==1, marker
+          print("PASS: three chat-identity protections in reconstructed engine")
+          PY
+      - name: Test guarded reconstructed engine with adversarial fake TDLib
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/vault-rebuilt/Vault-Exporter-Android-v09/app/src/main/java/org/vault/exporter"
+          mkdir -p "$RUNNER_TEMP/identity-test/org/vault/exporter" "$RUNNER_TEMP/identity-classes"
+          cp exporter-integration/fakes/org/vault/exporter/TdGateway.java "$RUNNER_TEMP/identity-test/org/vault/exporter/TdGateway.java"
+          python3 exporter-integration/patch_fake_identity.py "$RUNNER_TEMP/identity-test/org/vault/exporter/TdGateway.java"
+          curl -fsSL --retry 3 https://repo.maven.apache.org/maven2/org/json/json/20240303/json-20240303.jar -o "$RUNNER_TEMP/json.jar"
+          javac -cp "$RUNNER_TEMP/json.jar" -d "$RUNNER_TEMP/identity-classes" \
+            exporter-integration/fakes/android/content/Context.java \
+            exporter-integration/fakes/org/vault/exporter/SessionSecrets.java \
+            "$RUNNER_TEMP/identity-test/org/vault/exporter/TdGateway.java" \
+            "$ROOT"/{ExportEngine,HistoryCursor,ResumeStore,StagingCipher,ArchiveWriter,ArchiveVerifier,ChunkedVault,TelegramRateLimit}.java \
+            exporter-integration/TestIdentityGuard.java
+          java -Xmx256m -cp "$RUNNER_TEMP/identity-classes:$RUNNER_TEMP/json.jar" TestIdentityGuard
+      - name: Package source only, NEVER an APK or user data
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/vault-rebuilt"
+          tar --exclude='build' --exclude='*.class' --exclude='*.tva' \
+            -czf "$GITHUB_WORKSPACE/vault-checked-core-source.tar.gz" Vault-Exporter-Android-v09
+          sha256sum "$GITHUB_WORKSPACE/vault-checked-core-source.tar.gz" | tee "$GITHUB_WORKSPACE/vault-source-sha256.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vault-hardened-core-source-OFFLINE-ONLY
+          path: |
+            vault-checked-core-source.tar.gz
+            vault-source-sha256.txt
+          retention-days: 7
