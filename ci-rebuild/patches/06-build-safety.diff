@@ -1,0 +1,425 @@
+--- a/.github/workflows/build-debug-apk.yml
++++ b/.github/workflows/build-debug-apk.yml
+@@ -11,11 +11,6 @@
+   build:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 120
+-    env:
+-      GRADLE_PROJECT_telegramEnvironment: test
+-      GRADLE_PROJECT_approveProductionBuild: 'false'
+-      GRADLE_PROJECT_telegramApiId: ${{ secrets.TELEGRAM_API_ID }}
+-      GRADLE_PROJECT_telegramApiHash: ${{ secrets.TELEGRAM_API_HASH }}
+     steps:
+       - uses: actions/checkout@v4
+       - name: Verify privacy invariants before any build
+@@ -30,8 +25,11 @@
+           gradle-version: '8.9'
+       - name: Check developer app credentials
+         shell: bash
++        env:
++          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
++          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+         run: |
+-          if [[ ! "$GRADLE_PROJECT_telegramApiId" =~ ^[1-9][0-9]*$ ]] || [[ ! "$GRADLE_PROJECT_telegramApiHash" =~ ^[a-fA-F0-9]{32}$ ]]; then
++          if [[ ! "$TELEGRAM_API_ID" =~ ^[1-9][0-9]*$ ]] || [[ ! "$TELEGRAM_API_HASH" =~ ^[a-fA-F0-9]{32}$ ]]; then
+             echo 'Set TELEGRAM_API_ID and TELEGRAM_API_HASH as GitHub Actions secrets first.' >&2
+             exit 1
+           fi
+@@ -51,6 +49,9 @@
+           git -C "$RUNNER_TEMP/td" fetch --depth 1 origin "$TDLIB_SHA"
+           git -C "$RUNNER_TEMP/td" checkout -q --detach FETCH_HEAD
+           test "$(git -C "$RUNNER_TEMP/td" rev-parse HEAD)" = "$TDLIB_SHA"
++          # Modify only the pinned Docker *build recipe* to avoid irrelevant ABIs.
++          # The TDLib C++ source remains the exact verified upstream revision.
++          python3 scripts/prepare_tdlib_android.py "$RUNNER_TEMP/td/example/android/Dockerfile"
+           pushd "$RUNNER_TEMP/td/example/android"
+           # Upstream Dockerfile checks out COMMIT_HASH itself. Without this arg,
+           # it silently builds moving master, even though we fetched a pinned SHA above.
+@@ -69,14 +70,9 @@
+             echo 'Official Android TDLib build did not produce an arm64-v8a libtdjson.so' >&2
+             exit 1
+           fi
+-          # A library can have the correct ELF architecture but lack TDLib's
+-          # required JSON symbols. Check the actual ABI before Gradle builds.
+-          for symbol in td_create_client_id td_send td_receive; do
+-            if ! readelf -W --dyn-syms "$so" | awk -v required="$symbol" '$8 == required { found = 1 } END { exit !found }' ; then
+-              echo "Pinned TDLib binary lacks required JSON symbol: $symbol" >&2
+-              exit 1
+-            fi
+-          done
++          # Check ELF architecture, required defined JSON symbols, and non-system
++          # dynamic libraries, not merely filenames or archive contents.
++          python3 scripts/verify_tdlib_elf.py "$so" --output tdlib-abi.json
+           install -m 0644 "$so" app/src/main/jniLibs/arm64-v8a/libtdjson.so
+           python3 scripts/preflight.py
+           sha256sum app/src/main/jniLibs/arm64-v8a/libtdjson.so | tee tdlib-sha256.txt
+@@ -88,6 +84,11 @@
+           grep -Fq "orElse('test')" app/build.gradle
+           grep -Fq "put(\"use_test_dc\",BuildConfig.TELEGRAM_TEST_DC)" app/src/main/java/org/vault/exporter/MainActivity.java
+       - name: Build real Android debug APK
++        env:
++          GRADLE_PROJECT_telegramEnvironment: test
++          GRADLE_PROJECT_approveProductionBuild: 'false'
++          GRADLE_PROJECT_telegramApiId: ${{ secrets.TELEGRAM_API_ID }}
++          GRADLE_PROJECT_telegramApiHash: ${{ secrets.TELEGRAM_API_HASH }}
+         run: gradle --no-daemon :app:assembleDebug
+       - name: Show fingerprint and verify APK contents
+         shell: bash
+@@ -108,5 +109,6 @@
+             app/build/outputs/apk/debug/app-debug.apk
+             apk-sha256.txt
+             tdlib-sha256.txt
++            tdlib-abi.json
+             build-provenance.txt
+           retention-days: 7
+--- /dev/null
++++ b/BUILD_HARDENING_REPORT_RU.md
+@@ -0,0 +1,36 @@
++# Vault Exporter — продолжение разработки, 24.10.2026
++
++## Основа
++- Продолжено именно из `Vault_Exporter_JNI_Media_2026-10-24.zip`.
++- Сверен приватный GitHub `adolfmerkel196-ux/vault-exporter-android`: `main` по-прежнему на `c96f19d41da58ca78457caa6c9cdd7f694ba9afb` (23.10.2026).
++- Ветка `main` не изменялась. Этот пакет — **новая локальная рабочая копия**, ещё не загруженная в GitHub.
++
++## Исправлено в этом этапе
++1. **Восстановление Activity во время системного выбора места экспорта.** При утрате оперативного `pendingPassphrase` или `selectedChatId` операция теперь безопасно отменяется, вместо запуска с `null`-паролем; попытка удалить созданный системным выбором пустой файл. Пароль очищается при уничтожении Activity и при невозможности открыть окно сохранения.
++2. **Идентичность чата.** В ходе одной операции выбранный `chatId` фиксируется (`exportChatId`) и используется как для архива, так и для очистки staging. Это предотвращает гонки с изменениями полей Activity.
++3. **Официальная TDLib, воспроизводимая сборка.** Новый `scripts/prepare_tdlib_android.py` проверяет *точно ожидаемый* Dockerfile закреплённого upstream и ограничивает сборку `arm64-v8a`/Android API 26. Также удаляется ненужное получение moving-master версии для Docker cache-busting; TDLib C++ исходники не изменяются. При неожиданных изменениях Dockerfile сборка останавливается.
++4. **Проверка бинарника.** `scripts/verify_tdlib_elf.py` проверяет именно ELF64/AArch64, определённые динамические JSON-символы `td_create_client_id`, `td_send`, `td_receive`, SHA-256, размеры и отсутствие незапакованных нестандартных shared зависимостей; создаёт `tdlib-abi.json` при успешной проверке.
++5. **CI-секреты.** `TELEGRAM_API_ID` и `TELEGRAM_API_HASH` больше не доступны на уровне всего GitHub Actions job. Они предоставляются только шагам валидации и Gradle-сборки, но не checkout/setup/docker.
++6. **Отрицательные офлайн-тесты.** Добавлен `tests/RUN_BUILD_SAFETY_TESTS.py`: тесты отклонения непредвиденного Dockerfile, Linux/x86_64 `.so`, отсутствующих TDLib JSON exports и статическая проверка восстановления picker.
++
++## Что реально проверено
++- JVM/offline, без подключения к Telegram: ранее подтверждённые тесты ExportEngine, криптографии, 2 000 сообщений, 8 медиа, трёх обрывов, bounded heap, JNI Unicode и жизненного цикла запросов.
++- Вновь добавленные offline-тесты CI и статические проверки конфигурации.
++- Проверка YAML parsing пройдена.
++- `scripts/verify_tdlib_elf.py` протестирован на синтетическом Linux ELF с имитацией заголовка ARM для unit-теста — **это не Android `.so` и не свидетельство официальной TDLib**.
++
++## Что не проверено / блокирует выпуск
++- **Не построен** настоящий APK: в текущем контейнере нет Android SDK/NDK/Gradle и `libtdjson.so`, прямые загрузки SDK/GitHub заблокированы DNS.
++- Не запускался официальный код TDLib на Android/эмуляторе; Docker рецепт пока проверен статически на версии официального Dockerfile, а не реальной Docker-сборкой.
++- Нет экспериментов с Telegram test DC, отдельным безопасным тестовым аккаунтом, потерей сети на устройстве и Android process death.
++- Нет гарантии полного экспорта любой переписки: неизвестные медиа намеренно блокируют завершение, а удалённые/ограниченные сообщения недоступны.
++- При реальном CI требуется секрет `TELEGRAM_API_ID` и `TELEGRAM_API_HASH` **разработчика** в GitHub Actions, а также загрузка этого проекта в отдельную ветку; не отправлять код входа или аккаунт пользователя.
++- До реального аудита не публиковать этот APK и не подключать основной аккаунт пользователя.
++
++## Следующие тесты
++1. Создать отдельную ветку проекта, не меняя `main`; проверить PR/CI offline.
++2. Запустить workflow `.github/workflows/build-debug-apk.yml` на GitHub-hosted Ubuntu с секретами разработчика, дождаться результатов и проверить `tdlib-abi.json`, `apk-sha256.txt`.
++3. Установить **только тестовую сборку** на эмулятор, проверить offline UI, создание/закрытие TDLib клиента и криптографическую цепочку.
++4. На изолированном Telegram test DC проверить разрешённую пробную историю, медиа, восстановление и фактическое сравнение результатов.
++
++**Статус:** VERIFIED_OFFLINE_ONLY / ANDROID_TDLIB_UNVERIFIED / MAIN_ACCOUNT_NOT_USED.
+--- a/README.md
++++ b/README.md
+@@ -49,3 +49,8 @@
+ `bash integration-jvm/RUN_INTEGRATION_JVM.sh` реально выполняет исходный `ExportEngine` с TVS2 и строгим `ArchiveVerifier`. Тестовые заменители Android, TDLib и JSON находятся **только** в `integration-jvm/fakes/` и в Android APK не включаются. Проверены 250/2000 сообщений, восемь медиа, последовательные аварийные остановки, повторная финализация, испорченное staging и 48 МиБ при лимите памяти 32 МиБ. Подробности — `INTEGRATION_REPORT_RU.md`.
+ 
+ `bash RUN_ALL_OFFLINE.sh` запускает старый регрессионный набор и новую сквозную интеграцию. Это ещё не настоящий запуск на Android/TDLib и не разрешение применять основной Telegram-аккаунт.
++
++## Продолжение 24.10.2026 — безопасность Android/CI
++
++См. [`BUILD_HARDENING_REPORT_RU.md`](BUILD_HARDENING_REPORT_RU.md).
++Теперь сборочная инструкция закрепляет только arm64-v8a, проверяет `libtdjson.so` по ELF/JSON ABI и не предоставляет Telegram developer secrets всему GitHub Actions job. Android APK и работа с настоящей TDLib пока **не** проверены; никакой пользовательский Telegram аккаунт не подключался.
+--- a/RUN_ALL_OFFLINE.sh
++++ b/RUN_ALL_OFFLINE.sh
+@@ -6,3 +6,5 @@
+ bash transport-jvm/RUN_TRANSPORT_JVM.sh
+ bash native-host-test/RUN_NATIVE_HOST_TEST.sh
+ python3 ci-contract/verify_ci_contract.py
++
++python3 tests/RUN_BUILD_SAFETY_TESTS.py
+--- a/app/src/main/java/org/vault/exporter/MainActivity.java
++++ b/app/src/main/java/org/vault/exporter/MainActivity.java
+@@ -280,12 +280,17 @@
+         boolean valid=a.length>=14 && a.length<=256 && Arrays.equals(a,b);
+         Arrays.fill(b,'\0');
+         if(!valid) { Arrays.fill(a,'\0'); showStatus("Пароль не совпадает или не укладывается в 14–256 символов. Повтори попытку.");return;}
++        // No password ever goes into a Bundle or saved instance state.
+         pendingPassphrase = a;
+         Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+         intent.addCategory(Intent.CATEGORY_OPENABLE);
+         intent.setType("application/octet-stream");
+         intent.putExtra(Intent.EXTRA_TITLE,"Vault_"+System.currentTimeMillis()+".tva");
+-        startActivityForResult(intent,CREATE_ARCHIVE);
++        try {startActivityForResult(intent,CREATE_ARCHIVE);}
++        catch(RuntimeException pickerFailure) {
++          Arrays.fill(a,'\0');pendingPassphrase=null;
++          showStatus("Не удалось открыть локальное сохранение. Повтори выбор места и пароля.");
++        }
+       }).show();
+   }
+   @Override protected void onActivityResult(int request, int result, Intent data) {
+@@ -296,6 +301,16 @@
+       pendingPassphrase=null;return;
+     }
+     Uri destination=data.getData();
++    // Android can recreate/kill our Activity while the document picker is open.
++    // The password is intentionally NOT persisted in savedInstanceState. If it
++    // vanished, reject the placeholder rather than launch with a null password.
++    if (pendingPassphrase == null || selectedChatId == 0 || exporting) {
++      if (pendingPassphrase != null) Arrays.fill(pendingPassphrase,'\0');
++      pendingPassphrase=null;
++      try {getContentResolver().delete(destination,null,null);}catch(Exception ignored){}
++      showStatus("Экспорт не начался: Android восстановил приложение без пароля или выбора чата. Выбери чат и пароль ещё раз.");
++      return;
++    }
+     // Never accidentally upload a confidential archive through a cloud document provider.
+     String provider=destination.getAuthority();
+     if (!"com.android.externalstorage.documents".equals(provider) &&
+@@ -307,6 +322,7 @@
+       return;
+     }
+     char[] password=pendingPassphrase; pendingPassphrase=null;
++    final long exportChatId=selectedChatId; // Freeze chat identity for the entire export.
+     exporting=true;
+     clearUi(); message("Экспорт выполняется. Держи приложение открытым. Если связь прервётся, снова выбери тот же чат и нажми «Скачать всё / продолжить экспорт» — сохранённые зашифрованные данные останутся на телефоне.");
+     showStatus("Создаём зашифрованный архив…");
+@@ -315,7 +331,7 @@
+         ExportEngine.Summary summary;
+         try (OutputStream out=getContentResolver().openOutputStream(destination,"w")) {
+           if(out == null) throw new IOException("Не удалось открыть файл назначения");
+-          summary=new ExportEngine(this,td,this::showStatus).export(selectedChatId,out,password);
++          summary=new ExportEngine(this,td,this::showStatus).export(exportChatId,out,password);
+         }
+         showStatus("Проверяем целостность всего архива…");
+         int verified;
+@@ -327,7 +343,7 @@
+         // Erase encrypted staging only AFTER the final archive has been verified.
+         try {
+           byte[] sessionKey=new SessionSecrets(this).getOrCreate();
+-          try(ResumeStore staging=new ResumeStore(new File(getFilesDir(),"export-progress"),selectedChatId,sessionKey)) {
++          try(ResumeStore staging=new ResumeStore(new File(getFilesDir(),"export-progress"),exportChatId,sessionKey)) {
+             if(staging.state().historyFinished) staging.erase();
+           } finally {Arrays.fill(sessionKey,(byte)0);}
+         } catch(Exception cleanupError) {
+@@ -409,6 +425,8 @@
+     if(item.exists() && !item.delete())throw new IOException("Не удалось очистить закрытое хранилище");
+   }
+   @Override protected void onDestroy() {
++    // Abandoning the picker must not retain the vault password in the Activity.
++    if(pendingPassphrase!=null){Arrays.fill(pendingPassphrase,'\0');pendingPassphrase=null;}
+     if(td!=null) td.stop();
+     worker.shutdownNow();
+     super.onDestroy();
+--- a/ci-contract/verify_ci_contract.py
++++ b/ci-contract/verify_ci_contract.py
+@@ -8,8 +8,12 @@
+ assert sha, 'Missing explicit 40-digit upstream TDLib SHA'
+ assert 'git -C "$RUNNER_TEMP/td" rev-parse HEAD' in build, 'No source pin check'
+ assert '--build-arg "COMMIT_HASH=$TDLIB_SHA"' in build, 'Docker still builds moving master'
++assert not re.search(r'^    env:',build,re.M), 'Telegram API credentials must not be job-wide secrets'
++assert build.count('secrets.TELEGRAM_API_ID') == 2 and build.count('secrets.TELEGRAM_API_HASH') == 2, 'Credentials must be scoped only to validation/build steps'
+ assert '--build-arg TDLIB_INTERFACE=JSON' in build, 'Must build JSON client'
+-assert 'readelf -W --dyn-syms' in build and 'td_create_client_id td_send td_receive' in build, 'Missing exact native JSON ABI audit'
++assert 'scripts/verify_tdlib_elf.py' in build, 'Missing strict ELF JSON ABI audit'
++assert 'scripts/prepare_tdlib_android.py' in build, 'Missing arm64-only pinned Docker build recipe'
++assert 'tdlib-abi.json' in build, 'Missing structured TDLib ABI attestation'
+ assert 'tdlib-sha256.txt' in build and 'build-provenance.txt' in build, 'Missing reproducible native build evidence'
+ assert 'unzip -Z1 "$APK" | grep -Fxq' in build, 'Missing exact APK entry validation'
+ assert 'bash RUN_ALL_OFFLINE.sh' in build, 'Build workflow missing complete offline suite'
+--- /dev/null
++++ b/scripts/prepare_tdlib_android.py
+@@ -0,0 +1,42 @@
++#!/usr/bin/env python3
++"""Patch ONLY the pinned upstream Android build recipe, never TDLib C++ source.
++
++Upstream example/android/Dockerfile defaults to building four Android ABIs.
++Vault currently packages only arm64-v8a, so building others is unnecessary and
++increases CI time/cost. Abort on unknown recipes rather than guessing.
++"""
++import argparse
++from pathlib import Path
++
++BEFORE = ('RUN td/example/android/build-tdlib.sh SDK "$ANDROID_NDK_VERSION" '
++          'openssl "$ANDROID_STL" "$TDLIB_INTERFACE" && rm -rf td/example/android/build-*')
++CACHE_BUSTER = 'ADD "https://api.github.com/repos/tdlib/td/git/refs/heads/master" version.json\n'
++AFTER = ('ARG VAULT_ANDROID_API_LEVEL=26\nARG VAULT_ANDROID_ABIS=arm64-v8a\n'
++         'RUN td/example/android/build-tdlib.sh SDK "$ANDROID_NDK_VERSION" '
++         'openssl "$ANDROID_STL" "$TDLIB_INTERFACE" '
++         '"$VAULT_ANDROID_API_LEVEL" "$VAULT_ANDROID_ABIS" '
++         '&& rm -rf td/example/android/build-*')
++
++
++def patch(text: str) -> str:
++    if text.count(BEFORE) != 1 or AFTER in text:
++        raise ValueError('Pinned upstream TDLib Dockerfile changed, refusing unsafe automatic patch')
++    if 'ARG COMMIT_HASH=master' not in text or 'git checkout "$COMMIT_HASH"' not in text:
++        raise ValueError('TDLib commit pinning support absent; stop build')
++    if text.count(CACHE_BUSTER) != 1:
++        raise ValueError('Unexpected upstream Docker network cache-buster; stop build')
++    # Unrelated moving-master API requests defeat a pinned, reproducible build.
++    return text.replace(BEFORE, AFTER).replace(CACHE_BUSTER, '')
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument('dockerfile', type=Path)
++    args = parser.parse_args()
++    src = args.dockerfile.read_text(encoding='utf-8')
++    updated = patch(src)
++    args.dockerfile.write_text(updated, encoding='utf-8')
++    print('PASS: pinned TDLib Docker recipe restricted to arm64-v8a/API 26; upstream C++ untouched')
++
++if __name__ == '__main__':
++    main()
+--- /dev/null
++++ b/scripts/verify_tdlib_elf.py
+@@ -0,0 +1,77 @@
++#!/usr/bin/env python3
++"""Fail-closed inspection of official Android TDLib JSON shared object.
++
++This is a static ABI/packaging gate, not a runtime or supply-chain audit.
++"""
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import re
++import subprocess
++
++REQUIRED = {'td_create_client_id', 'td_send', 'td_receive'}
++DANGEROUS_DYNAMIC = {'libcrypto.so', 'libssl.so', 'libc++_shared.so'}
++
++
++def run(*args):
++    result = subprocess.run(['readelf', '-W', *args], text=True,
++                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
++    return result.stdout
++
++
++def verify(file: Path, bundled_dir: Path):
++    if not file.is_file() or file.stat().st_size < 512_000:
++        raise ValueError('libtdjson.so missing or implausibly small')
++    header = run('-h', str(file))
++    if not re.search(r'Class:\s+ELF64\b', header):
++        raise ValueError('TDLib not ELF64')
++    if not re.search(r'Data:\s+2.s complement, little endian', header):
++        raise ValueError('TDLib not little endian')
++    if not re.search(r'Machine:\s+AArch64\b', header):
++        raise ValueError('TDLib not Android arm64/AArch64')
++    symbols = run('--dyn-syms', str(file))
++    exported = set()
++    for line in symbols.splitlines():
++        cols = line.split()
++        if len(cols) < 8 or not cols[0].endswith(':'):
++            continue
++        # Only exported, defined GLOBAL/WEAK functions count.
++        if cols[4] not in ('GLOBAL','WEAK') or cols[6] == 'UND':
++            continue
++        exported.add(cols[7].split('@')[0])
++    missing = REQUIRED - exported
++    if missing:
++        raise ValueError('Missing TDLib JSON exports: ' + ', '.join(sorted(missing)))
++    dynamic = run('-d', str(file))
++    needed = set(re.findall(r'\(NEEDED\)\s+Shared library: \[([^\]]+)\]', dynamic))
++    for dependency in DANGEROUS_DYNAMIC & needed:
++        if not (bundled_dir / dependency).is_file():
++            raise ValueError('Non-system dependency not packaged: ' + dependency)
++    digest=hashlib.sha256()
++    with file.open('rb') as handle:
++        for chunk in iter(lambda:handle.read(1024*1024),b''):
++            digest.update(chunk)
++    record = dict(sha256=digest.hexdigest(),
++                  bytes=file.stat().st_size, abi='arm64-v8a',
++                  required_json_symbols=sorted(REQUIRED), needed=sorted(needed))
++    return record
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument('library', type=Path)
++    ap.add_argument('--output', type=Path)
++    args = ap.parse_args()
++    try:
++        result = verify(args.library, args.library.parent)
++    except (ValueError, OSError, subprocess.CalledProcessError) as exc:
++        raise SystemExit('ABORT: official TDLib binary not verified: ' + str(exc))
++    encoded = json.dumps(result, indent=2, sort_keys=True) + '\n'
++    if args.output:
++        args.output.write_text(encoded, encoding='utf-8')
++    print('PASS: Android AArch64 ELF, TDLib JSON ABI and packaged dynamic deps checked')
++    print(encoded)
++
++if __name__ == '__main__':
++    main()
+--- /dev/null
++++ b/tests/RUN_BUILD_SAFETY_TESTS.py
+@@ -0,0 +1,76 @@
++#!/usr/bin/env python3
++"""Offline CI tests: deterministic build recipe, untrusted binary checks and UI safety gates.
++These are static/unit tests; they do not prove the APK compiles or runs.
++"""
++from pathlib import Path
++from tempfile import TemporaryDirectory
++import importlib.util
++import subprocess
++import struct
++
++ROOT = Path(__file__).resolve().parent.parent
++
++def module(name, path):
++    spec = importlib.util.spec_from_file_location(name, path)
++    imported = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(imported)
++    return imported
++
++preparer=module('preparer', ROOT/'scripts/prepare_tdlib_android.py')
++verifier=module('verifier', ROOT/'scripts/verify_tdlib_elf.py')
++
++# Reproduce exactly the recipe clause fetched from the pinned official upstream
++# example/android/Dockerfile; the C++ source tree is left untouched.
++fixture='''FROM ubuntu:24.04 AS build
++ADD "https://api.github.com/repos/tdlib/td/git/refs/heads/master" version.json
++ARG COMMIT_HASH=master
++RUN git clone https://github.com/tdlib/td.git && cd td && git checkout "$COMMIT_HASH"
++RUN td/example/android/build-tdlib.sh SDK "$ANDROID_NDK_VERSION" openssl "$ANDROID_STL" "$TDLIB_INTERFACE" && rm -rf td/example/android/build-*
++'''
++patched=preparer.patch(fixture)
++assert patched.count('ARG VAULT_ANDROID_ABIS=arm64-v8a')==1
++assert '"$VAULT_ANDROID_API_LEVEL" "$VAULT_ANDROID_ABIS"' in patched
++assert 'git checkout "$COMMIT_HASH"' in patched
++assert 'refs/heads/master' not in patched
++for unreviewed in (fixture.replace('ARG COMMIT_HASH=master','ARG COMMIT_HASH=stable'),
++                   fixture.replace(' && rm -rf', ' || rm -rf'), patched):
++    try: preparer.patch(unreviewed)
++    except ValueError: pass
++    else: raise AssertionError('Unknown/unreviewed official build recipe accepted')
++
++# Build a harmless Linux fixture: binary ABI rejection must occur even if the
++# right JSON symbols happen to exist. This is NOT official TDLib or Android.
++with TemporaryDirectory(prefix='tdlib-elf-test-') as tmp:
++    dir=Path(tmp)
++    c=dir/'fake.c'
++    c.write_text('int td_create_client_id(void){return 1;} '
++                 'void td_send(int id,const char*q){(void)id;(void)q;} '
++                 'const char*td_receive(double n){(void)n;return "{}";}')
++    elf=dir/'libtdjson.so'
++    subprocess.run(['gcc','-shared','-fPIC',str(c),'-o',str(elf)],check=True)
++    with elf.open('ab') as f: f.write(b'\\0'*(512_001-elf.stat().st_size))
++    try: verifier.verify(elf,dir)
++    except ValueError as e: assert 'AArch64' in str(e)
++    else: raise AssertionError('Accepted host x86_64 Linux library as Android')
++    # Mock the ELF machine field in the *test fixture* only to exercise
++    # remaining export/dependency checks; never publish the mock as TDLib.
++    raw=bytearray(elf.read_bytes());struct.pack_into('<H',raw,18,183);elf.write_bytes(raw)
++    result=verifier.verify(elf,dir)
++    assert set(result['required_json_symbols'])==verifier.REQUIRED
++    assert result['abi']=='arm64-v8a'
++    c.write_text('int td_create_client_id(void){return 1;}')
++    subprocess.run(['gcc','-shared','-fPIC',str(c),'-o',str(elf)],check=True)
++    with elf.open('ab') as f: f.write(b'\\0'*(512_001-elf.stat().st_size))
++    raw=bytearray(elf.read_bytes());struct.pack_into('<H',raw,18,183);elf.write_bytes(raw)
++    try: verifier.verify(elf,dir)
++    except ValueError as e: assert 'Missing TDLib JSON exports' in str(e)
++    else: raise AssertionError('Accepted incomplete JSON symbol ABI')
++
++# Activity recreation while ACTION_CREATE_DOCUMENT is open cannot preserve
++# passwords in Bundles. Reject a provider result without an in-memory secret.
++activity=(ROOT/'app/src/main/java/org/vault/exporter/MainActivity.java').read_text()
++assert 'if (pendingPassphrase == null || selectedChatId == 0 || exporting)' in activity
++assert 'final long exportChatId=selectedChatId;' in activity
++assert 'export(exportChatId,out,password)' in activity
++assert 'Arrays.fill(pendingPassphrase' in activity
++print('PASS: pinned arm64-only TDLib build gate, ELF ABI negative fixtures, picker password-loss safety')
