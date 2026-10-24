@@ -1,0 +1,50 @@
+name: Compile real Android Java (no Telegram credentials)
+on:
+  push:
+    branches: [work/vault-exporter-integrity-20261024]
+    paths:
+      - '.github/workflows/test-android-javac.yml'
+      - 'exporter-integration/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile-android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Prepare pinned real v0.9 Android sources with tested history guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '6aa2c1c5805b6044b98a7182b5dcd3cbcd80683429cd1d916779463b047fcef5  Vault-Exporter-Android-v09-source.zip' | sha256sum -c -
+          unzip -q Vault-Exporter-Android-v09-source.zip -d "$RUNNER_TEMP/vault"
+          SRC="$RUNNER_TEMP/vault/Vault-Exporter-Android-v09"
+          python3 exporter-integration/patch_export_engine.py "$SRC/app/src/main/java/org/vault/exporter/ExportEngine.java"
+          python3 exporter-integration/guard_chat_identity.py "$SRC/app/src/main/java/org/vault/exporter/ExportEngine.java"
+          cp exporter-integration/HistoryCursor.java "$SRC/app/src/main/java/org/vault/exporter/HistoryCursor.java"
+          echo "SOURCE=$SRC" >> "$GITHUB_ENV"
+      - name: Install Android compile SDK
+        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile Android Java sources only (NO APK produced)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE"
+          # No real credentials, network login or TDLib needed for Java compilation.
+          # Exclude binary preflight only for this compile-only job. Never release an APK.
+          gradle --no-daemon -PtelegramEnvironment=test \
+            -PtelegramApiId=1 -PtelegramApiHash=00000000000000000000000000000000 \
+            :app:compileDebugJavaWithJavac -x :app:verifyExporterBuild
+          test -d app/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes
+          test ! -e app/build/outputs/apk/debug/app-debug.apk
+          echo 'PASS: Android Java compile only. TDLib/Android runtime NOT validated.'
