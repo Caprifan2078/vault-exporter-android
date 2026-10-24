@@ -1,0 +1,88 @@
+name: Manually package TEST-DC-only exporter with developer API keys
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package-test-dc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify developer API configuration without logging the values
+        shell: bash
+        env:
+          ORG_GRADLE_PROJECT_telegramApiId: ${{ secrets.TELEGRAM_API_ID }}
+          ORG_GRADLE_PROJECT_telegramApiHash: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,re
+          ident=os.getenv('ORG_GRADLE_PROJECT_telegramApiId','')
+          token=os.getenv('ORG_GRADLE_PROJECT_telegramApiHash','')
+          if not re.fullmatch(r'[1-9][0-9]*',ident) or not re.fullmatch(r'[a-fA-F0-9]{32}',token):
+              raise SystemExit('ABORT: configure own TELEGRAM_API_ID and TELEGRAM_API_HASH in GitHub Actions Secrets; never send login codes')
+          print('PASS: developer credentials are syntactically valid; values not printed')
+          PY
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Set up Android build SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_MANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -1)
+          test -x "$SDK_MANAGER"
+          yes | "$SDK_MANAGER" --licenses >/dev/null || true
+          "$SDK_MANAGER" --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;25.2.9519653' 'cmake;3.22.1'
+      - name: Restore verified official ARM64 TDLib from approved source build
+        uses: actions/download-artifact@v4
+        with:
+          name: official-tdlib-arm64-UNTESTED-RUNTIME
+          run-id: '40106582322'
+          repository: adolfmerkel196-ux/vault-exporter-android
+          github-token: ${{ github.token }}
+          path: tdlib-verified
+      - name: Verify official native binary and manifest security
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fx 'source_sha=ea3f69ce11aef458bfbb09869b809ede4447486f' tdlib-verified/BUILD_PROVENANCE.txt
+          (cd tdlib-verified && sha256sum -c SHA256SUMS.txt)
+          python3 scripts/verify_tdlib_elf.py tdlib-verified/arm64-v8a/libtdjson.so
+          install -D -m 0644 tdlib-verified/arm64-v8a/libtdjson.so app/src/main/jniLibs/arm64-v8a/libtdjson.so
+          python3 scripts/security_gate.py
+          python3 scripts/preflight.py
+      - name: Assemble explicitly isolated TEST DC app, never production
+        shell: bash
+        env:
+          ORG_GRADLE_PROJECT_telegramApiId: ${{ secrets.TELEGRAM_API_ID }}
+          ORG_GRADLE_PROJECT_telegramApiHash: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          set -euo pipefail
+          gradle --no-daemon -PtelegramEnvironment=test :app:assembleTestDc
+          APK=app/build/outputs/apk/testDc/app-testDc.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
+          "$AAPT" dump badging "$APK" | grep -F "package: name='org.vault.exporter.sandbox.testnet'"
+          "$AAPT" dump permissions "$APK" | grep -F 'android.permission.INTERNET'
+          BCONFIG=app/build/generated/source/buildConfig/testDc/org/vault/exporter/BuildConfig.java
+          test -s "$BCONFIG"
+          grep -F 'TELEGRAM_TEST_DC = true' "$BCONFIG"
+          grep -F 'ALLOW_PRODUCTION = false' "$BCONFIG"
+          unzip -t "$APK" | tail -1
+          sha256sum "$APK" > TEST_DC_APK_SHA256.txt
+          printf '%s\n' 'QUARANTINED TEST TELEGRAM DATA CENTERS ONLY' 'This APK is NOT production-capable and is NOT safety-audited.' 'No Telegram account has been logged into by CI.' 'Use only with isolated test DC test identities and fictional messages.' > NOT_FOR_PRIMARY_ACCOUNT.txt
+      - name: Archive quarantined test DC APK privately for one day
+        uses: actions/upload-artifact@v4
+        with:
+          name: ISOLATED-TEST-DC-NETWORK-APK-NOT-FOR-PRIMARY-ACCOUNT
+          path: |
+            app/build/outputs/apk/testDc/app-testDc.apk
+            TEST_DC_APK_SHA256.txt
+            NOT_FOR_PRIMARY_ACCOUNT.txt
+          retention-days: 1
