@@ -45,7 +45,7 @@ public final class TestOfflineArchiveFixture {
     try{ArchiveVerifier.verify(new ByteArrayInputStream(corrupted),password);}
     catch(Exception expected){corruptionRejected=true;}
     if(!corruptionRejected)throw new AssertionError("Corrupt fixture accepted");
-    Arrays.fill(password,'\\0');
+    Arrays.fill(password,'\0');
     System.out.println("PASS: Android offline fixture: 3 synthetic messages, 1 media, 5 entries, correct password, tamper rejection");
   }
 }
