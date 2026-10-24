@@ -1,0 +1,104 @@
+name: Assemble quarantined Android test-DC APK (no Telegram login)
+on:
+  push:
+    branches: [work/vault-exporter-replayed-20261024]
+    paths: ['.github/workflows/build-testdc-apk.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: vault-testdc-apk-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  assemble:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install compile SDK, NDK and CMake
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="$ANDROID_HOME"
+          SDK_MANAGER=$(find "$SDK_ROOT/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -1)
+          test -x "$SDK_MANAGER"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          yes | "$SDK_MANAGER" --licenses >/dev/null || true
+          "$SDK_MANAGER" --sdk_root="$SDK_ROOT" --install \
+            'platforms;android-35' 'build-tools;35.0.0' 'ndk;25.2.9519653' 'cmake;3.22.1'
+      - name: Download verified pinned TDLib artifact (expires after three days)
+        uses: actions/download-artifact@v4
+        with:
+          name: official-tdlib-arm64-UNTESTED-RUNTIME
+          run-id: '40106582322'
+          github-token: ${{ github.token }}
+          repository: adolfmerkel196-ux/vault-exporter-android
+          path: tdlib-verified
+      - name: Verify TDLib provenance, SHA-256, ELF and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f tdlib-verified/BUILD_PROVENANCE.txt
+          grep -Fx 'source_repo=tdlib/td' tdlib-verified/BUILD_PROVENANCE.txt
+          grep -Fx 'source_sha=ea3f69ce11aef458bfbb09869b809ede4447486f' tdlib-verified/BUILD_PROVENANCE.txt
+          grep -Fx 'interface=JSON' tdlib-verified/BUILD_PROVENANCE.txt
+          grep -Fx 'abi=arm64-v8a' tdlib-verified/BUILD_PROVENANCE.txt
+          grep -Fx 'telegram_login_performed=false' tdlib-verified/BUILD_PROVENANCE.txt
+          sha256sum -c tdlib-verified/SHA256SUMS.txt
+          python3 scripts/verify_tdlib_elf.py tdlib-verified/arm64-v8a/libtdjson.so \
+            --output tdlib-verified/build-verified-abi.json
+          install -m 0644 tdlib-verified/arm64-v8a/libtdjson.so \
+            app/src/main/jniLibs/arm64-v8a/libtdjson.so
+          python3 scripts/preflight.py
+          python3 scripts/security_gate.py
+      - name: Assemble with INVALID test DC credentials, no Telegram account
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace \
+            -PtelegramEnvironment=test \
+            -PtelegramApiId=1 \
+            -PtelegramApiHash=00000000000000000000000000000000 \
+            :app:assembleDebug
+      - name: Verify APK sandbox identity, native libs and test configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" | tail -1
+          unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/libtdjson.so'
+          unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/libvaultbridge.so'
+          ! unzip -Z1 "$APK" | grep -Eq '^lib/(armeabi-v7a|x86|x86_64)/'
+          unzip -Z1 "$APK" | grep -Eq '^classes[0-9]*\.dex$'
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
+          "$AAPT" dump badging "$APK" | grep -E "^package: name='org.vault.exporter.sandbox'"
+          BUILDCONFIG=app/build/generated/source/buildConfig/debug/org/vault/exporter/BuildConfig.java
+          test -f "$BUILDCONFIG"
+          grep -Eq 'TELEGRAM_TEST_DC = true;' "$BUILDCONFIG"
+          grep -Eq 'ALLOW_PRODUCTION = false;' "$BUILDCONFIG"
+          sha256sum "$APK" > APK_SHA256.txt
+          printf '%s\n' 'NOT A RELEASE: TEST DATA CENTERS ONLY' \
+            'Invalid developer credentials; login cannot succeed.' \
+            'No Telegram account connected or tested; emulator startup not tested.' \
+            'Do not install as a trusted exporter.' > NOT_READY_FOR_INSTALLATION.txt
+          echo 'PASS: sandbox APK assembled, inspected; Android runtime not yet validated'
+      - name: Save short-lived internal artifact, NOT A RELEASE
+        uses: actions/upload-artifact@v4
+        with:
+          name: QUARANTINED-sandbox-APK-NOT-FOR-INSTALLATION
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            APK_SHA256.txt
+            NOT_READY_FOR_INSTALLATION.txt
+            tdlib-verified/build-verified-abi.json
+          retention-days: 1
