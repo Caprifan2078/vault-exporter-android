@@ -29,6 +29,7 @@ public final class MainActivity extends Activity {
   private final java.util.concurrent.atomic.AtomicBoolean initializing = new java.util.concurrent.atomic.AtomicBoolean(false);
   private final java.util.concurrent.atomic.AtomicBoolean nativeProbeRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
   private final int CREATE_ARCHIVE = 718;
+  private final int CREATE_OFFLINE_FIXTURE = 719;
   private char[] pendingPassphrase;
   // The document picker is an asynchronous operation; preserve the original chat.
   private long pendingChatId = 0;
@@ -67,6 +68,8 @@ public final class MainActivity extends Activity {
     }
     button("Посмотреть, как работает экспорт (офлайн)", this::showOfflineDemo);
     if (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)
+      button("Создать проверочный архив .tva (офлайн)", this::requestOfflineFixture);
+    if (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)
       button("Проверить нативную TDLib (офлайн)", this::probeNativeTdlibOffline);
     if (!BuildConfig.DEBUG) {
       button(BuildConfig.TELEGRAM_TEST_DC ? "Подключить тестовый Telegram" : "Подключить настоящий Telegram", this::askBeforeConnect);
@@ -80,6 +83,58 @@ public final class MainActivity extends Activity {
       .setTitle("Офлайн-демонстрация")
       .setMessage("1. Авторизация в отдельном сеансе\n2. Выбор облачной переписки\n3. Скачивание поддерживаемых вложений, даже без кэша\n4. Шифрование локального архива\n5. Проверка целостности и предложение выхода\n\nЭто только демонстрация шагов. Соединение с Telegram не выполняется.")
       .setPositiveButton("Понятно", null).show();
+  }
+  // One real end-to-end local Android archive without Telegram login or real messages.
+  // The passphrase is publicly known because the archive contains ONLY fictional data.
+  private void requestOfflineFixture() {
+    if (!(BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)) return;
+    new AlertDialog.Builder(this).setTitle("Создать настоящий учебный архив")
+      .setMessage("Сохранит зашифрованный .tva с 3 вымышленными сообщениями и 1 текстовым файлом.\n\nНикаких данных Telegram или сети. Пароль: Vault-demo-archive-only")
+      .setNegativeButton("Отмена",null)
+      .setPositiveButton("Выбрать папку",(dialog,which)->{
+        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octet-stream");
+        intent.putExtra(Intent.EXTRA_TITLE,"Vault_OFFLINE_TEST.tva");
+        try {startActivityForResult(intent,CREATE_OFFLINE_FIXTURE);}
+        catch(RuntimeException e){showStatus("Не удалось открыть выбор папки для учебного архива.");}
+      }).show();
+  }
+  private void saveOfflineFixture(Uri destination) {
+    if (!(BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)) return;
+    String provider=destination.getAuthority();
+    if (!"com.android.externalstorage.documents".equals(provider) &&
+        !"com.android.providers.downloads.documents".equals(provider) &&
+        !"com.android.providers.media.documents".equals(provider)) {
+      showStatus("Для учебного архива выбери локальную память телефона, не облачный диск.");
+      return;
+    }
+    showStatus("Создаём и проверяем учебный .tva на телефоне…");
+    worker.execute(()->{
+      char[] password=OfflineArchiveFixture.PASSWORD.toCharArray();
+      try {
+        try(OutputStream out=getContentResolver().openOutputStream(destination,"w")){
+          if(out==null)throw new IOException("Не открылся локальный файл");
+          OfflineArchiveFixture.write(out,password);
+        }
+        int entries;
+        try(InputStream in=getContentResolver().openInputStream(destination)){
+          if(in==null)throw new IOException("Не удалось открыть архив для проверки");
+          entries=ArchiveVerifier.verify(in,password);
+        }
+        if(entries!=5)throw new IOException("Неверное число проверенных записей");
+        showStatus("Готово: настоящий зашифрованный учебный архив создан и проверен (5 записей).");
+        runOnUiThread(()->{
+          if(!isFinishing()&&!isDestroyed())
+            new AlertDialog.Builder(this).setTitle("Учебный архив готов")
+              .setMessage("Создан реальный зашифрованный файл .tva из вымышленных сообщений. Проверка целостности пройдена.\n\nПароль: Vault-demo-archive-only\n\nЭто НЕ экспорт Telegram.")
+              .setPositiveButton("Понятно",null).show();
+        });
+      } catch(Exception e) {
+        try{getContentResolver().delete(destination,null,null);}catch(Exception ignored){}
+        showStatus("Не получилось создать или проверить учебный архив. Проверь свободное место.");
+      } finally {Arrays.fill(password,'\\0');}
+    });
   }
   /**
    * Debug/test-DC only: verify JNI dynamic linking and basic official TDLib C API.
@@ -397,6 +452,11 @@ public final class MainActivity extends Activity {
   }
   @Override protected void onActivityResult(int request, int result, Intent data) {
     super.onActivityResult(request,result,data);
+    if (request == CREATE_OFFLINE_FIXTURE) {
+      if (result == RESULT_OK && data != null && data.getData() != null)
+        saveOfflineFixture(data.getData());
+      return;
+    }
     if(request != CREATE_ARCHIVE) return;
     if(result!=RESULT_OK || data==null || data.getData()==null) {
       if(pendingPassphrase!=null)Arrays.fill(pendingPassphrase,'\0');
