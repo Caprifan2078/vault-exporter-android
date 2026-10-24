@@ -64,6 +64,30 @@ assert any('Соединение с Telegram не выполняется' in t f
 print('PASS: offline-only welcome and demo dialog')
 PY
 adb shell input keyevent KEYCODE_BACK
+# The new on-device fixture must be reachable without ever contacting Telegram.
+capture_ui /tmp/vault-fixture-home.xml
+python3 - /tmp/vault-fixture-home.xml > /tmp/vault-fixture-tap.txt <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for n in root.iter('node'):
+    if 'Создать проверочный архив .tva (офлайн)' in n.get('text',''):
+        m=re.match(r'\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]',n.get('bounds',''))
+        if m:
+            a,b,c,d=map(int,m.groups()); print((a+c)//2,(b+d)//2); break
+else: raise AssertionError('Real encrypted offline archive button missing')
+PY
+read -r X Y </tmp/vault-fixture-tap.txt
+adb shell input tap "$X" "$Y"
+sleep 1
+capture_ui /tmp/vault-fixture-dialog.xml
+python3 - /tmp/vault-fixture-dialog.xml <<'PY'
+import sys, xml.etree.ElementTree as ET
+texts=[n.get('text','') for n in ET.parse(sys.argv[1]).getroot().iter('node')]
+assert any('Создать настоящий учебный архив' in t for t in texts), 'Fixture picker confirmation not visible'
+assert any('Никаких данных Telegram или сети' in t for t in texts), 'Fixture safety warning missing'
+print('PASS: real encrypted archive fixture is user-accessible offline with no login')
+PY
+adb shell input keyevent KEYCODE_BACK
 # Verify the real JNI bridge and official TDLib client lifecycle, no authentication.
 capture_ui /tmp/vault-after-demo.xml
 python3 - /tmp/vault-after-demo.xml >/tmp/tdlib-tap.txt <<'PY'
