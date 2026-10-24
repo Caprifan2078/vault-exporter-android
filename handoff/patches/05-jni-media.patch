@@ -1,0 +1,875 @@
+diff -ruN a/.github/workflows/build-debug-apk.yml b/.github/workflows/build-debug-apk.yml
+--- a/.github/workflows/build-debug-apk.yml	2026-10-24 07:49:09.173336832 +0000
++++ b/.github/workflows/build-debug-apk.yml	2026-10-24 07:42:44.487934970 +0000
+@@ -69,8 +69,17 @@
+             echo 'Official Android TDLib build did not produce an arm64-v8a libtdjson.so' >&2
+             exit 1
+           fi
++          # A library can have the correct ELF architecture but lack TDLib's
++          # required JSON symbols. Check the actual ABI before Gradle builds.
++          for symbol in td_create_client_id td_send td_receive; do
++            if ! readelf -W --dyn-syms "$so" | awk -v required="$symbol" '$8 == required { found = 1 } END { exit !found }' ; then
++              echo "Pinned TDLib binary lacks required JSON symbol: $symbol" >&2
++              exit 1
++            fi
++          done
+           install -m 0644 "$so" app/src/main/jniLibs/arm64-v8a/libtdjson.so
+           python3 scripts/preflight.py
++          sha256sum app/src/main/jniLibs/arm64-v8a/libtdjson.so | tee tdlib-sha256.txt
+       - name: Run the COMPLETE reproducible offline suite before building APK
+         run: bash RUN_ALL_OFFLINE.sh
+       - name: Confirm test data center build only
+@@ -86,13 +95,18 @@
+           set -euo pipefail
+           APK=app/build/outputs/apk/debug/app-debug.apk
+           test -s "$APK"
+-          unzip -l "$APK" | grep -q 'lib/arm64-v8a/libtdjson.so'
+-          unzip -l "$APK" | grep -q 'lib/arm64-v8a/libvaultbridge.so'
++          unzip -Z1 "$APK" | grep -Fxq 'lib/arm64-v8a/libtdjson.so'
++          unzip -Z1 "$APK" | grep -Fxq 'lib/arm64-v8a/libvaultbridge.so'
++          # Confirm this artifact is a test-DC build, never a production build.
+           sha256sum "$APK" | tee apk-sha256.txt
++          printf 'Source TDLib commit: %s\n' 'ea3f69ce11aef458bfbb09869b809ede4447486f' > build-provenance.txt
++          cat tdlib-sha256.txt apk-sha256.txt >> build-provenance.txt
+       - uses: actions/upload-artifact@v4
+         with:
+           name: vault-exporter-test-dc-alpha-apk
+           path: |
+             app/build/outputs/apk/debug/app-debug.apk
+             apk-sha256.txt
++            tdlib-sha256.txt
++            build-provenance.txt
+           retention-days: 7
+diff -ruN a/FILE_MANIFEST_SHA256.json b/FILE_MANIFEST_SHA256.json
+--- a/FILE_MANIFEST_SHA256.json	2026-10-24 07:49:09.174641301 +0000
++++ b/FILE_MANIFEST_SHA256.json	2026-10-24 07:48:37.186049127 +0000
+@@ -1,165 +1,69 @@
+ {
+-  "description": "Vault Exporter Android continuation snapshot; all paths relative to project root",
++  "base": "Vault_Exporter_TDLib_Reliability_2026-10-24.zip",
+   "files": {
+-    "HARDENING_REPORT_RU.md": {
+-      "sha256": "3d1d3714b3c2a2496e2c60669bbe4abd2dc47823b19e194fc1211935bf67073c",
+-      "bytes": 9589
++    ".github/workflows/build-debug-apk.yml": {
++      "sha256": "17411e1881457d8ac601bd7d1479c67816c95f465462159672fe668f054ed253",
++      "bytes": 5359
+     },
+-    "settings.gradle": {
+-      "sha256": "74611a14dce2bfa33838b20cc53eadb0d4c459ae563588423556065822e4bf5d",
+-      "bytes": 282
++    ".github/workflows/offline-security-tests.yml": {
++      "sha256": "535561e4281afb30b3eb59ae540c6f04c8eba51d8aebf924051313e462840957",
++      "bytes": 541
++    },
++    ".gitignore": {
++      "sha256": "159364b5a1c713f3a36c7f572ae829b57b5a4bdf102b9d03d5046ebafd9b9ec3",
++      "bytes": 88
+     },
+     "CONTINUATION_REPORT_RU.md": {
+       "sha256": "cf6c5ff1471808e82b908061c67aa52e18091c1c90ca1ffd448e59a85cd66698",
+       "bytes": 7008
+     },
+-    "TEST_RUN_RU.txt": {
+-      "sha256": "cfb779a4fec5fa90dadb1bcf9964883468d798fcbc77850887d4146785d1e36c",
+-      "bytes": 1027
++    "FULL_TEST_LOG.txt": {
++      "sha256": "5f939b92203290d4a8d3cbcdec9d6598a076fba4fe2daf5b00597d3232695a59",
++      "bytes": 1455
++    },
++    "FULL_TEST_LOG_2026-10-24_JNI.txt": {
++      "sha256": "c22c8c90a54830237668ecc5174c5565027604b49810fbab9955adc7180b1b22",
++      "bytes": 1834
++    },
++    "HARDENING_REPORT_RU.md": {
++      "sha256": "3d1d3714b3c2a2496e2c60669bbe4abd2dc47823b19e194fc1211935bf67073c",
++      "bytes": 9589
+     },
+     "INTEGRATION_REPORT_RU.md": {
+       "sha256": "b7c2ce3ba6dac7e61ff265094868edb5005b1549e3f0e5c2fb423c3bf1cd9317",
+       "bytes": 8828
+     },
++    "JNI_AND_MEDIA_HARDENING_RU.md": {
++      "sha256": "1662f964ba7b6afb5a8296e3ddd171937eaf04722f678cbc6569faeac17d0f32",
++      "bytes": 7038
++    },
+     "README.md": {
+-      "sha256": "a36c161c7e1ef8ed60a055741b77c04c589d253bdeb5d79db3e52ae0e5fd67fc",
+-      "bytes": 7163
++      "sha256": "aff61484894b4e7d50d18c60cec9b0002d2ef765a8772d32dfddee3121ca3dc4",
++      "bytes": 7722
+     },
+     "RUN_ALL_OFFLINE.sh": {
+-      "sha256": "c98a39217c4347d39369b7bba91f18c64c7338d7ddb09144a8313ae4eeb713c1",
+-      "bytes": 217
++      "sha256": "a343a6f5425ced8dd0a14a1459c4a968c09b62b8e6a04217c383836e638be668",
++      "bytes": 263
+     },
+-    "FULL_TEST_LOG.txt": {
+-      "sha256": "5f939b92203290d4a8d3cbcdec9d6598a076fba4fe2daf5b00597d3232695a59",
+-      "bytes": 1455
++    "STATUS_RU.md": {
++      "sha256": "0bc50895bb4c7608cedba0bd1ee2c6c2c62020e1e2499fdf476296b9480a758e",
++      "bytes": 3517
+     },
+-    ".gitignore": {
+-      "sha256": "159364b5a1c713f3a36c7f572ae829b57b5a4bdf102b9d03d5046ebafd9b9ec3",
+-      "bytes": 88
++    "TEST_RUN_RU.txt": {
++      "sha256": "cfb779a4fec5fa90dadb1bcf9964883468d798fcbc77850887d4146785d1e36c",
++      "bytes": 1027
+     },
+     "VERIFIER_HARDENING_2026-10-24_RU.md": {
+       "sha256": "b7eaa1b793107b96ee865d8a2073773d334b980f06953bbd4e7fbfd810a46bf3",
+       "bytes": 5287
+     },
+-    "gradle.properties": {
+-      "sha256": "fdcda40a82e36d5031ec21ee8685e7275cf30d5bb916927893a6687b70b5006c",
+-      "bytes": 76
+-    },
+-    "build.gradle": {
+-      "sha256": "a17900030e5094e7c68b9cdd4a833a63a16a8ba21eef8336f4a4b39f35b35d75",
+-      "bytes": 69
+-    },
+-    "STATUS_RU.md": {
+-      "sha256": "58c3f799d62f56e34ea23f0f941039e984ff93d721fec3a80a666fa470be03e3",
+-      "bytes": 2372
+-    },
+-    "integration-jvm/TestHardenedExportEngine.java": {
+-      "sha256": "76679248704f566082a21a0f61801bd7e73ef509b21f89a2a07bcce838bf0645",
+-      "bytes": 7451
+-    },
+-    "integration-jvm/RUN_INTEGRATION_JVM.sh": {
+-      "sha256": "73a5a7a99ccd0712d2b1db3af5319668514bdc6071d8d1df8c05808e56617616",
+-      "bytes": 646
+-    },
+-    "integration-jvm/TestEngineBoundedMemory.java": {
+-      "sha256": "d5bab4d0df515c71d5c4ca947bc00280cde5a67e1b2bda3a6009071b9d10d9c1",
+-      "bytes": 1244
+-    },
+-    "docs/RELEASE_GATES_RU.md": {
+-      "sha256": "546f8a9c6f1ffaf49f60dddb05d9d5bbc86175d81bc023e5dae3a85d67b89f7f",
+-      "bytes": 5097
+-    },
+-    "docs/BUILD_APK_RU.md": {
+-      "sha256": "ea160b93debd772aeabb83ce5dc70886543b4041d71f6a1365c5e67f0ea705b0",
+-      "bytes": 3175
+-    },
+-    "docs/SECURITY_REVIEW_V07_RU.md": {
+-      "sha256": "de5cd9a36d151f4ccb92c071f64aa32a2dd25b09981aa63c20b39e5be5ccd34b",
+-      "bytes": 4053
+-    },
+-    "docs/SECURITY_RU.md": {
+-      "sha256": "ac11bd8b1b8e5b5780d4b78baf53df3e6a4ef6d1bb29914244462ff69afa9d57",
+-      "bytes": 7567
+-    },
+-    "docs/FORMAT_RU.md": {
+-      "sha256": "2c1eecaed290eae8a8883808f533eb2b764e8c668c63d9252b6fffbf6714d2f5",
+-      "bytes": 6278
+-    },
+-    "docs/BUILD_APK_NO_COMMANDS_RU.md": {
+-      "sha256": "164c4a43486befa8542fb4e2858e015eab6354e481284da79330519beb000607",
+-      "bytes": 3387
+-    },
+-    "transport-jvm/TestTdGatewayLifecycle.java": {
+-      "sha256": "40f54d47e55a9320f2df6ff59e420484d6f898f9a5d6ee6fd333b11efa273560",
+-      "bytes": 3592
+-    },
+-    "transport-jvm/RUN_TRANSPORT_JVM.sh": {
+-      "sha256": "cffdbc072bf8160ee99d0e562b27dedcbb80b8de57330c21f16c1be9ab70f51f",
+-      "bytes": 414
+-    },
+-    "ci-contract/verify_ci_contract.py": {
+-      "sha256": "3afa9535ca01b5b901363b42df9a0079e9434da2b4a95651d517126bd5d5fec6",
+-      "bytes": 969
+-    },
+-    "app/proguard-rules.pro": {
+-      "sha256": "d00b922fdaf82cd5f38acba299382bc33c88ccaa179fdfb5bfcaf0f51c27f4bc",
+-      "bytes": 105
+-    },
+     "app/build.gradle": {
+       "sha256": "34e61d12c3877dc6b209a789a4691c6e5f7653ec2f2ce7bd0a40bcc43819f1dd",
+       "bytes": 3300
+     },
+-    "tests/RunRateLimitTests.java": {
+-      "sha256": "0af495408e6df70d36d3a1234e17de3c3a686b4c6f24336b5c5d4abed2e5d728",
+-      "bytes": 729
+-    },
+-    "tests/RunResumeTests.java": {
+-      "sha256": "d2e0105a676397964940c6907c086c10379976fa9dffba6d53a803c0582cd686",
+-      "bytes": 3330
+-    },
+-    "tests/RunPipelineTests.java": {
+-      "sha256": "c0c36c9c168095b0c4f77684864256a9af2e5295cad7e8d5be74d1403cee7a73",
+-      "bytes": 3381
+-    },
+-    "tests/RunCryptoTests.java": {
+-      "sha256": "ca2630477777fdd81105a42f1d22aeddaf9ffffe5088394debef40826607a6be",
+-      "bytes": 3054
+-    },
+-    "tests/sample_fake_chat.tva": {
+-      "sha256": "06a9ec1538cf4c03eafa33067360ac66e313f2e60366043de40f4d7f37a7c474",
+-      "bytes": 256921
+-    },
+-    "tests/RUN_TESTS_OFFLINE.sh": {
+-      "sha256": "f4ed98e2900fe11d4394641df18000e6dee3cc5018c1a73ed0dc5da3223dfb9a",
+-      "bytes": 891
+-    },
+-    "tests/RunVerifierBoundedMemoryTest.java": {
+-      "sha256": "cbae2013af8913791ef81a264ae8ba83a7ea5a396a648f30186017c4a0ac0633",
+-      "bytes": 2435
+-    },
+-    "tests/RunHistoryCursorHardeningTests.java": {
+-      "sha256": "cab2f8e028bed4ee89fb5e2aa558814d4843e6f7ef886e2f2f8cf1ab33f1cc2a",
+-      "bytes": 1883
+-    },
+-    "tests/RunStagingV2HardeningTests.java": {
+-      "sha256": "3f7084e12546bae8d718d84ea9591a2904a7485ad699a6fcebb3d3173d02262b",
+-      "bytes": 6359
+-    },
+-    "tests/RunStagingBoundedMemoryTest.java": {
+-      "sha256": "fbaf59554b493f1b22a84f456612a05c2c36aef7b0f2a8c8778acc18a586af94",
+-      "bytes": 969
+-    },
+-    "tests/RunSemanticArchiveVerifierTests.java": {
+-      "sha256": "55f96ceb05cf797e4299ff006ff4aff1e7c50f88a9fb2c51d121067eb9151dee",
+-      "bytes": 7048
+-    },
+-    "scripts/preflight.py": {
+-      "sha256": "76e2c2f09092271815bdc8a23100588d997c48fcba12aae1a5f578ea01c0fe75",
+-      "bytes": 1150
+-    },
+-    "scripts/security_gate.py": {
+-      "sha256": "d5ffa35910bf6de6fd07df119f079615a037bf8ec0a0500c8d22ae21c1d1eb93",
+-      "bytes": 2553
++    "app/proguard-rules.pro": {
++      "sha256": "d00b922fdaf82cd5f38acba299382bc33c88ccaa179fdfb5bfcaf0f51c27f4bc",
++      "bytes": 105
+     },
+     "app/src/main/AndroidManifest.xml": {
+       "sha256": "c0e88a26c1b19eb644af2e9a97787c412f50f0d586b91fa8b63d542219a58f64",
+@@ -170,49 +74,41 @@
+       "bytes": 252
+     },
+     "app/src/main/cpp/vaultbridge.cpp": {
+-      "sha256": "95249fd81f9a1908ed8e78fb013940d4cf4b0738df0673f7261b99d1ee3a1e43",
+-      "bytes": 2881
+-    },
+-    "app/src/main/java/org/vault/exporter/MainActivity.java": {
+-      "sha256": "9fe25220f8468da7cc3a61288d919ac5e1ad5f129a6f5203629fdd2ccf9d7470",
+-      "bytes": 29501
+-    },
+-    "app/src/main/java/org/vault/exporter/ChunkedVault.java": {
+-      "sha256": "6874c4f45e0b025ab52c98c0b0601cafef46305631ee64885fab840c16f01b16",
+-      "bytes": 6390
++      "sha256": "9ce5d49e72d0a85b0c2c5c21f73eef3c288494284a7426350b57e01016a42a52",
++      "bytes": 4311
+     },
+     "app/src/main/java/org/vault/exporter/ArchiveVerifier.java": {
+       "sha256": "4ee3e702a28fcfce61cd3f32800fb38d8d443362c30daebb4ac72bb42dd645f1",
+       "bytes": 14556
+     },
+-    "app/src/main/java/org/vault/exporter/ExportEngine.java": {
+-      "sha256": "4aa088237d45e2ad20d74100afbe2d3b0fc3cedce85c21c01f2590aca3875f11",
+-      "bytes": 20297
+-    },
+     "app/src/main/java/org/vault/exporter/ArchiveWriter.java": {
+       "sha256": "8a49bb192c969702aef390e29d9cb193f60858aa6573b96e20a316d6740bc35e",
+       "bytes": 2437
+     },
+-    "app/src/main/java/org/vault/exporter/SessionSecrets.java": {
+-      "sha256": "321fdc6e4a946fb5225136485940972b0b5791649fc5156dc2a0c8fdbbe6bf5f",
+-      "bytes": 2959
+-    },
+-    "app/src/main/java/org/vault/exporter/ResumeStore.java": {
+-      "sha256": "b06e20c0f7856ed45bc4dd461d949895a88ec83ffbe97801c762eecc659d885d",
+-      "bytes": 9826
+-    },
+-    "app/src/main/java/org/vault/exporter/TelegramRateLimit.java": {
+-      "sha256": "9e570764b4a4bfd884cbbd1b6b222612e94638d88c10928dfa2f1ef0d6cb3663",
+-      "bytes": 1167
++    "app/src/main/java/org/vault/exporter/ChunkedVault.java": {
++      "sha256": "6874c4f45e0b025ab52c98c0b0601cafef46305631ee64885fab840c16f01b16",
++      "bytes": 6390
+     },
+-    "app/src/main/java/org/vault/exporter/TdNative.java": {
+-      "sha256": "5ee4a94f4706d21cef0243d98899fc2fdc9747f668b76b4a46c25f1083456b62",
+-      "bytes": 399
++    "app/src/main/java/org/vault/exporter/ExportEngine.java": {
++      "sha256": "70a81548156c4b1bd9e4f80240817be1b248eef5030dc7b65364550b1cd25a7c",
++      "bytes": 21661
+     },
+     "app/src/main/java/org/vault/exporter/HistoryCursor.java": {
+       "sha256": "415266fdfac88999be3b011118263f4c300891963b55a47034f18996c7e8d1bc",
+       "bytes": 1473
+     },
++    "app/src/main/java/org/vault/exporter/MainActivity.java": {
++      "sha256": "f43285eb9229eef6dc47fd244bd9e9451d115dae0ad99e481a12755617594e54",
++      "bytes": 29474
++    },
++    "app/src/main/java/org/vault/exporter/ResumeStore.java": {
++      "sha256": "b06e20c0f7856ed45bc4dd461d949895a88ec83ffbe97801c762eecc659d885d",
++      "bytes": 9826
++    },
++    "app/src/main/java/org/vault/exporter/SessionSecrets.java": {
++      "sha256": "321fdc6e4a946fb5225136485940972b0b5791649fc5156dc2a0c8fdbbe6bf5f",
++      "bytes": 2959
++    },
+     "app/src/main/java/org/vault/exporter/StagingCipher.java": {
+       "sha256": "2d503e7c6a8afb0b7905cb58940b22d2aace440c98fd0f8a916ca94f834ac59b",
+       "bytes": 5947
+@@ -221,6 +117,14 @@
+       "sha256": "684a4cc0829e29ec35ccfab1178147ac0bfdb83932ffcef0b3f80e64d2730585",
+       "bytes": 4053
+     },
++    "app/src/main/java/org/vault/exporter/TdNative.java": {
++      "sha256": "5ee4a94f4706d21cef0243d98899fc2fdc9747f668b76b4a46c25f1083456b62",
++      "bytes": 399
++    },
++    "app/src/main/java/org/vault/exporter/TelegramRateLimit.java": {
++      "sha256": "9e570764b4a4bfd884cbbd1b6b222612e94638d88c10928dfa2f1ef0d6cb3663",
++      "bytes": 1167
++    },
+     "app/src/main/jniLibs/arm64-v8a/README.txt": {
+       "sha256": "c306d0386e885edace8d7207dd51f80f1ee0a7f184575c2295aca21dc30511de",
+       "bytes": 223
+@@ -229,17 +133,53 @@
+       "sha256": "cd3613bb8f401f7e5ca7671c9441fdd712d2d411b470fdfb0e251e986fa51449",
+       "bytes": 572
+     },
+-    ".github/workflows/offline-security-tests.yml": {
+-      "sha256": "535561e4281afb30b3eb59ae540c6f04c8eba51d8aebf924051313e462840957",
+-      "bytes": 541
++    "build.gradle": {
++      "sha256": "a17900030e5094e7c68b9cdd4a833a63a16a8ba21eef8336f4a4b39f35b35d75",
++      "bytes": 69
+     },
+-    ".github/workflows/build-debug-apk.yml": {
+-      "sha256": "1d8a3f881bfba2f48d3ee8ec8800825edfb25933b3fecad05f2b4c945dba6c24",
+-      "bytes": 4458
++    "ci-contract/verify_ci_contract.py": {
++      "sha256": "5aa749096892d90d68dfe504bb9771cd571532e5b99e7e28170522ab23f1fd92",
++      "bytes": 1437
+     },
+-    "transport-jvm/fakes/org/vault/exporter/TdNative.java": {
+-      "sha256": "9f190afc6da679092b882aa4f259c62028aa9c02e5d9f2cc39a503daebe56409",
+-      "bytes": 1028
++    "docs/BUILD_APK_NO_COMMANDS_RU.md": {
++      "sha256": "164c4a43486befa8542fb4e2858e015eab6354e481284da79330519beb000607",
++      "bytes": 3387
++    },
++    "docs/BUILD_APK_RU.md": {
++      "sha256": "ea160b93debd772aeabb83ce5dc70886543b4041d71f6a1365c5e67f0ea705b0",
++      "bytes": 3175
++    },
++    "docs/FORMAT_RU.md": {
++      "sha256": "2c1eecaed290eae8a8883808f533eb2b764e8c668c63d9252b6fffbf6714d2f5",
++      "bytes": 6278
++    },
++    "docs/RELEASE_GATES_RU.md": {
++      "sha256": "b180b649617600faff9548ffd5845f0aa684865fad4d7711c99be3ea21a61669",
++      "bytes": 5522
++    },
++    "docs/SECURITY_REVIEW_V07_RU.md": {
++      "sha256": "de5cd9a36d151f4ccb92c071f64aa32a2dd25b09981aa63c20b39e5be5ccd34b",
++      "bytes": 4053
++    },
++    "docs/SECURITY_RU.md": {
++      "sha256": "ac11bd8b1b8e5b5780d4b78baf53df3e6a4ef6d1bb29914244462ff69afa9d57",
++      "bytes": 7567
++    },
++    "gradle.properties": {
++      "sha256": "fdcda40a82e36d5031ec21ee8685e7275cf30d5bb916927893a6687b70b5006c",
++      "bytes": 76
++    },
++    "integration-jvm/RUN_INTEGRATION_JVM.sh": {
++      "sha256": "73a5a7a99ccd0712d2b1db3af5319668514bdc6071d8d1df8c05808e56617616",
++      "bytes": 646
++    },
++    "integration-jvm/TestEngineBoundedMemory.java": {
++      "sha256": "d5bab4d0df515c71d5c4ca947bc00280cde5a67e1b2bda3a6009071b9d10d9c1",
++      "bytes": 1244
++    },
++    "integration-jvm/TestHardenedExportEngine.java": {
++      "sha256": "a2a5b3a69531b3f8ec4535fc750765d414df2fb72723681af0e2f83d9d59700e",
++      "bytes": 9962
+     },
+     "integration-jvm/fakes/android/content/Context.java": {
+       "sha256": "7e249a2add000f9950601e9642bdd03ef757f84ce3706844d5b5ddb7ebe88817",
+@@ -249,21 +189,101 @@
+       "sha256": "d3f2a6ab624bd91bf1fb0fd3238e93f9a4f27d8fb3fd21c639ad6f4e34c38769",
+       "bytes": 627
+     },
+-    "integration-jvm/fakes/org/json/JSONObject.java": {
+-      "sha256": "762f485404dc1498e775c34284958780dd81bdaae42a9e984c364ec0ee313733",
+-      "bytes": 5130
+-    },
+     "integration-jvm/fakes/org/json/JSONException.java": {
+       "sha256": "a8ba4822228524adde2a943ac6a7cf06acb8f2b224c4a82dd3dac1faea4dfe1d",
+       "bytes": 178
+     },
++    "integration-jvm/fakes/org/json/JSONObject.java": {
++      "sha256": "762f485404dc1498e775c34284958780dd81bdaae42a9e984c364ec0ee313733",
++      "bytes": 5130
++    },
+     "integration-jvm/fakes/org/vault/exporter/SessionSecrets.java": {
+       "sha256": "f31905c97b99eccb32786a7c2f180525210e3b5f0102c7d5a873ab07742d3bd9",
+       "bytes": 349
+     },
+     "integration-jvm/fakes/org/vault/exporter/TdGateway.java": {
+-      "sha256": "cb32eba72ddd076ff0b827d952fc8524443191ed32e48a41033591fe452d836d",
+-      "bytes": 5097
++      "sha256": "44dc7c42ac415ca8fd24026b3523f07461844924cd5d5478fe4a2a81a7f052aa",
++      "bytes": 5288
++    },
++    "native-host-test/FakeTdJson.cpp": {
++      "sha256": "e44e132447837ed17b73c7c99d1e009e2d995e31e38f10a9a175ca8f5ff35c76",
++      "bytes": 375
++    },
++    "native-host-test/RUN_NATIVE_HOST_TEST.sh": {
++      "sha256": "04b613ffab77f0a40d9f404e102990334957fc38f6f3a998378b8cc347dc95af",
++      "bytes": 860
++    },
++    "native-host-test/TestNativeHost.java": {
++      "sha256": "a2d8ffdbfe188a79904b221336555aec3f7d7afd2186dea081c5a5da11cf53a7",
++      "bytes": 798
++    },
++    "scripts/preflight.py": {
++      "sha256": "76e2c2f09092271815bdc8a23100588d997c48fcba12aae1a5f578ea01c0fe75",
++      "bytes": 1150
++    },
++    "scripts/security_gate.py": {
++      "sha256": "d5ffa35910bf6de6fd07df119f079615a037bf8ec0a0500c8d22ae21c1d1eb93",
++      "bytes": 2553
++    },
++    "settings.gradle": {
++      "sha256": "74611a14dce2bfa33838b20cc53eadb0d4c459ae563588423556065822e4bf5d",
++      "bytes": 282
++    },
++    "tests/RUN_TESTS_OFFLINE.sh": {
++      "sha256": "f4ed98e2900fe11d4394641df18000e6dee3cc5018c1a73ed0dc5da3223dfb9a",
++      "bytes": 891
++    },
++    "tests/RunCryptoTests.java": {
++      "sha256": "ca2630477777fdd81105a42f1d22aeddaf9ffffe5088394debef40826607a6be",
++      "bytes": 3054
++    },
++    "tests/RunHistoryCursorHardeningTests.java": {
++      "sha256": "cab2f8e028bed4ee89fb5e2aa558814d4843e6f7ef886e2f2f8cf1ab33f1cc2a",
++      "bytes": 1883
++    },
++    "tests/RunPipelineTests.java": {
++      "sha256": "c0c36c9c168095b0c4f77684864256a9af2e5295cad7e8d5be74d1403cee7a73",
++      "bytes": 3381
++    },
++    "tests/RunRateLimitTests.java": {
++      "sha256": "0af495408e6df70d36d3a1234e17de3c3a686b4c6f24336b5c5d4abed2e5d728",
++      "bytes": 729
++    },
++    "tests/RunResumeTests.java": {
++      "sha256": "d2e0105a676397964940c6907c086c10379976fa9dffba6d53a803c0582cd686",
++      "bytes": 3330
++    },
++    "tests/RunSemanticArchiveVerifierTests.java": {
++      "sha256": "55f96ceb05cf797e4299ff006ff4aff1e7c50f88a9fb2c51d121067eb9151dee",
++      "bytes": 7048
++    },
++    "tests/RunStagingBoundedMemoryTest.java": {
++      "sha256": "fbaf59554b493f1b22a84f456612a05c2c36aef7b0f2a8c8778acc18a586af94",
++      "bytes": 969
++    },
++    "tests/RunStagingV2HardeningTests.java": {
++      "sha256": "3f7084e12546bae8d718d84ea9591a2904a7485ad699a6fcebb3d3173d02262b",
++      "bytes": 6359
++    },
++    "tests/RunVerifierBoundedMemoryTest.java": {
++      "sha256": "cbae2013af8913791ef81a264ae8ba83a7ea5a396a648f30186017c4a0ac0633",
++      "bytes": 2435
++    },
++    "tests/sample_fake_chat.tva": {
++      "sha256": "06a9ec1538cf4c03eafa33067360ac66e313f2e60366043de40f4d7f37a7c474",
++      "bytes": 256921
++    },
++    "transport-jvm/RUN_TRANSPORT_JVM.sh": {
++      "sha256": "cffdbc072bf8160ee99d0e562b27dedcbb80b8de57330c21f16c1be9ab70f51f",
++      "bytes": 414
++    },
++    "transport-jvm/TestTdGatewayLifecycle.java": {
++      "sha256": "40f54d47e55a9320f2df6ff59e420484d6f898f9a5d6ee6fd333b11efa273560",
++      "bytes": 3592
++    },
++    "transport-jvm/fakes/org/vault/exporter/TdNative.java": {
++      "sha256": "9f190afc6da679092b882aa4f259c62028aa9c02e5d9f2cc39a503daebe56409",
++      "bytes": 1028
+     }
+   }
+ }
+diff -ruN a/FULL_TEST_LOG_2026-10-24_JNI.txt b/FULL_TEST_LOG_2026-10-24_JNI.txt
+--- a/FULL_TEST_LOG_2026-10-24_JNI.txt	1970-01-01 00:00:00.000000000 +0000
++++ b/FULL_TEST_LOG_2026-10-24_JNI.txt	2026-10-24 07:47:57.712927041 +0000
+@@ -0,0 +1,19 @@
++PASS: authenticated streaming, >3 blocks, password, tampering, truncation, ZIP entries, path filtering; bytes=788510
++PASS resume: restart, reuse, confidentiality, isolation, wrong key, tamper
++PASS pipeline: encrypted staging -> password archive -> verified media + messages
++PASS: Telegram rate-limit parser
++PASS 42 TVS2/JVM checks (boundaries, GCM authentication, replay, truncation, exact terminator, checkpoint, legacy)
++PASS 204083 checks: 100000 sparse IDs, 2037 short pages, duplicates/orders rejected
++PASS 36 verifier fixtures: complete archive + adversarial counts, ids, malformed JSON, tamper, path and missing file rejection
++PASS: streaming 48MiB media staging under JVM 32MiB heap
++PASS: independent SHA-256/length verification for 64 MiB media under JVM 32 MiB heap
++PASS: static manifest, backup and outbound-code safeguards (not a security audit)
++PASS: test DC default, production opt-in, separate app identities, no auto-connect
++PASS strict content coverage: three unknown media variants and rich previews fail closed; progress resumes; known contact succeeds
++PASS Hardened ExportEngine+TVS2+strict verifier: 250 and 2000 messages, eight media kinds, three outages, media retry, interrupted finalization, SHA-256, wrong password; bytes=151999
++PASS bounded-memory real ExportEngine+TVS2+strict ArchiveVerifier: 48 MiB video @ -Xmx32m, TVA bytes=58511
++PASS: 150 cancellations, awaited timeout, late/out-of-order replies, and session stop release pending work (fake TDLib)
++PASS JNI C++/Java native offline roundtrip: client ID, ASCII, Cyrillic, emoji, ZWJ
++PASS CI build contract: pinned TDLib ea3f69ce11aef458bfbb09869b809ede4447486f and complete offline suite
++PASS: static manifest, backup and outbound-code safeguards (not a security audit)
++PASS: test DC default, production opt-in, separate app identities, no auto-connect
+diff -ruN a/JNI_AND_MEDIA_HARDENING_RU.md b/JNI_AND_MEDIA_HARDENING_RU.md
+--- a/JNI_AND_MEDIA_HARDENING_RU.md	1970-01-01 00:00:00.000000000 +0000
++++ b/JNI_AND_MEDIA_HARDENING_RU.md	2026-10-24 07:48:35.769889361 +0000
+@@ -0,0 +1,43 @@
++# Vault Exporter Android — продолжение аудита 24 октября 2026 года
++
++База: `Vault_Exporter_TDLib_Reliability_2026-10-24.zip`. Все исправления в отдельной рабочей копии. Ветка GitHub `main` не изменена. Основной Telegram-аккаунт не использовался.
++
++## 1. Реальный дефект JNI Unicode
++
++**До исправления:** `vaultbridge.cpp` передавал в официальную TDLib `JNIEnv::GetStringUTFChars`. Результат этой функции — *modified UTF-8*, а интерфейс `td_send()` принимает стандартный UTF-8 JSON. Java `String` с эмодзи/суррогатными парами превращался в CESU-8 и повреждался. Воспроизведено в Linux native-тесте (не на Android): переданный объект с эмодзи не совпал с возвращённым.
++
++**Исправлено:** перед отправкой выполняется явное преобразование Java UTF-16 в стандартный UTF-8 с обработкой суррогатных пар и заменой некорректных одиночных суррогатов. Сохранён существующий правильный декодер полученных TDLib UTF-8 сообщений.
++
++**Проверено:** настоящий Java ↔ JNI C++ переход с отдельной **тестовой** `libtdjson.so` (без сети). Пройден round-trip ID, ASCII, кириллицы, эмодзи и последовательности ZWJ. Тестовые C++ и Java файлы находятся в `native-host-test/` и не копируются в приложение. Ни тестовый `.so`, ни test fake TDLib не включены в APK.
++
++## 2. Несовместимые типы вложений больше не теряются молча
++
++**До исправления:** `ExportEngine.mainFile()` возвращал `null` и для чисто текстовых сообщений, и для иных, потенциально мультимедийных типов Telegram, иногда позволяя объявить архив полным при фактически не скачанных файлах.
++
++**Исправлено:** для неизвестных видов контента и rich link preview экспорт останавливается, сохраняя уже зашифрованные контрольные точки. Набор очевидных немедийных типов явно разрешён. Неизвестные типы **не считаются успешно экспортированными**. Это fail-closed защита, а НЕ добавление их полноценной поддержки.
++
++**Проверено на искусственном TDLib:** отказ для `messagePaidMedia`, `messageChatChangePhoto`, неизвестного типа и текстового сообщения с rich preview; восстановление после препятствия с ранее сохранёнными страницами; нормальный `messageContact` по-прежнему экспортируется. Прежние интеграционные сценарии на 250/2000 сообщений и 8 видах медиа прошли.
++
++**Ограничение:** реальный архив может остановиться на легальном сообщении со ссылкой с preview, пока не будут реализованы все такие вложения. Нельзя заявлять полноту *всех* типов Telegram. Остановка лучше ложной отметки о полноте.
++
++## 3. Строже сценарий нативной сборки
++
++CI для тестового Telegram DC дополнен: до Gradle проверяется наличие `td_create_client_id`, `td_send`, `td_receive` в динамических символах собранной `libtdjson.so`. Подписывается SHA-256 этой библиотеки, APK и закреплённый SHA исходника TDLib в отдельном `build-provenance.txt`. В конечном APK ожидаются точные пути `.so`. Сам процесс сборки с официальной TDLib в текущем окружении **не запускался** и APK **не создавался**.
++
++## 4. Фактически выполненные тесты
++
++- Ранее существовавший JVM suite `tests/RUN_TESTS_OFFLINE.sh`: PASS.
++- `integration-jvm/RUN_INTEGRATION_JVM.sh`, включая новые негативные типы и 48 МиБ видео при 32 МиБ JVM: PASS.
++- `transport-jvm/RUN_TRANSPORT_JVM.sh`: PASS.
++- `native-host-test/RUN_NATIVE_HOST_TEST.sh`: PASS.
++- `ci-contract/verify_ci_contract.py` и `scripts/security_gate.py`: PASS.
++- Один запуск объединённого `RUN_ALL_OFFLINE.sh` превысил время выполнения ПОСЛЕ вывода PASS native-host-теста, до последней строки CI-контракта. Последняя проверка запущена отдельно и прошла. Поэтому **полностью завершённый единый прогон в этом запуске не заявляется**.
++
++## 5. Непроверено — блокирует выпуск APK
++
++- Android SDK/NDK в текущем контейнере отсутствуют; загрузка SDK недоступна из-за DNS/сетевых ограничений.
++- Нет настоящей Android-компиляции, эмулятора, установки APK, запусков с официальной TDLib и тестового Telegram DC.
++- Нет достоверного измерения многогигабайтной истории на телефоне, расхода батареи, полного набора mediaContent или влияния неофициального клиента на реальный Telegram-аккаунт.
++- Публичный/производственный выпуск и подключение основного аккаунта остаются **ЗАБЛОКИРОВАНЫ**.
++
++**Следующее корректное действие:** запустить собранный test-DC CI на изолированной ветке с официальной pinned TDLib и авторизованными секретами разработчика (не через чат); проверить Android ABI, APK, затем Android-эмулятор и лишь затем отдельный тестовый Telegram-сеанс. До этого никакой APK не выдавать за проверенный.
+diff -ruN a/README.md b/README.md
+--- a/README.md	2026-10-24 07:49:09.175474009 +0000
++++ b/README.md	2026-10-24 07:45:41.073172767 +0000
+@@ -1,3 +1,5 @@
++> **Обновление 24.10.2026 (JNI Unicode + полнота):** найден и исправлен дефект modified UTF-8 в JNI-отправке TDLib. Добавлены проверка кириллицы и эмодзи через настоящую C++/Java границу на Linux (fake TDLib), строгая остановка на неподдерживаемых вложениях и проверка нативных JSON-символов в CI. См. `JNI_AND_MEDIA_HARDENING_RU.md`. Это НЕ проверенный Android APK.
++
+ > Обновление 24.10.2026: проверка жизненного цикла TDLib-запросов, строгий pin Docker-сборки и отдельный отчёт `CONTINUATION_REPORT_RU.md`. Без Android APK и без Telegram-аккаунта.
+ 
+ # Vault Exporter v0.9 — безопасное начало тестирования (исходники, НЕ APK)
+diff -ruN a/RUN_ALL_OFFLINE.sh b/RUN_ALL_OFFLINE.sh
+--- a/RUN_ALL_OFFLINE.sh	2026-10-24 07:49:09.175562082 +0000
++++ b/RUN_ALL_OFFLINE.sh	2026-10-24 07:45:41.071117063 +0000
+@@ -4,4 +4,5 @@
+ bash tests/RUN_TESTS_OFFLINE.sh
+ bash integration-jvm/RUN_INTEGRATION_JVM.sh
+ bash transport-jvm/RUN_TRANSPORT_JVM.sh
++bash native-host-test/RUN_NATIVE_HOST_TEST.sh
+ python3 ci-contract/verify_ci_contract.py
+diff -ruN a/STATUS_RU.md b/STATUS_RU.md
+--- a/STATUS_RU.md	2026-10-24 07:49:09.175642834 +0000
++++ b/STATUS_RU.md	2026-10-24 07:45:41.073264115 +0000
+@@ -15,3 +15,9 @@
+ - 48 МиБ синтетическое видео через весь `ExportEngine` при ограничении JVM heap в 32 МиБ — **PASS**.
+ - Обязательная проверка формата `participants.json` и сверка заявленного счётчика участников, если он указан: добавлены четыре отрицательных теста — **PASS**.
+ - ПРИМЕЧАНИЕ: main GitHub не обновлён; исходники и тесты содержатся в данном ZIP. Android/TDLib, на реальном устройстве и с реальным аккаунтом не проверено.
++
++### Дополнение: JNI и неизвестные вложения
++- JNI `td_send` исправлен на конвертацию Java UTF-16 в стандартный UTF-8; Unicode round-trip на Linux с искусственным `libtdjson.so`: **PASS**. Нельзя приравнивать к Android-тесту.
++- Неизвестные/медиасодержащие `message...` больше не игнорируются молча, экспорт останавливается с сохраняемым прогрессом. Проверены отказ и успешное возобновление на искусственных данных.
++- Поддержка всех Telegram messageContent ещё НЕ реализована; частые rich link previews намеренно могут блокировать экспорт, пока не добавлена полная обработка вложений превью.
++- Нативные символы JSON API и sha256-протокол включены в сценарий CI, однако запуск CI на GitHub ещё НЕ подтверждён.
+diff -ruN a/app/src/main/cpp/vaultbridge.cpp b/app/src/main/cpp/vaultbridge.cpp
+--- a/app/src/main/cpp/vaultbridge.cpp	2026-10-24 07:49:09.176469121 +0000
++++ b/app/src/main/cpp/vaultbridge.cpp	2026-10-24 07:44:45.526222891 +0000
+@@ -31,10 +31,40 @@
+ extern "C" JNIEXPORT void JNICALL
+ Java_org_vault_exporter_TdNative_send(JNIEnv* env, jclass, jlong client, jstring json) {
+   if (!ready() || !json || client == 0) return;
+-  const char* bytes = env->GetStringUTFChars(json, nullptr);
+-  if (!bytes) return;
+-  send_request((int)client, bytes);
+-  env->ReleaseStringUTFChars(json, bytes);
++  // GetStringUTFChars returns JNI *modified* UTF-8 (CESU-8 for emoji).
++  // TDLib's JSON interface requires standard UTF-8. Convert UTF-16 ourselves
++  // so supplementary Unicode characters are transmitted as 4-byte sequences.
++  const jchar* chars = env->GetStringChars(json, nullptr);
++  if (!chars) return;
++  const jsize length = env->GetStringLength(json);
++  std::string utf8;
++  utf8.reserve(static_cast<size_t>(length) * 3u);
++  for (jsize i = 0; i < length; ++i) {
++    uint32_t c = static_cast<uint32_t>(chars[i]);
++    if (c >= 0xD800 && c <= 0xDBFF && i + 1 < length &&
++        chars[i+1] >= 0xDC00 && chars[i+1] <= 0xDFFF) {
++      c = 0x10000u + ((c - 0xD800u) << 10) +
++          (static_cast<uint32_t>(chars[++i]) - 0xDC00u);
++    } else if (c >= 0xD800 && c <= 0xDFFF) {
++      c = 0xFFFDu;
++    }
++    if (c < 0x80) utf8.push_back(static_cast<char>(c));
++    else if (c < 0x800) {
++      utf8.push_back(static_cast<char>(0xC0 | (c >> 6)));
++      utf8.push_back(static_cast<char>(0x80 | (c & 0x3F)));
++    } else if (c < 0x10000) {
++      utf8.push_back(static_cast<char>(0xE0 | (c >> 12)));
++      utf8.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
++      utf8.push_back(static_cast<char>(0x80 | (c & 0x3F)));
++    } else {
++      utf8.push_back(static_cast<char>(0xF0 | (c >> 18)));
++      utf8.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
++      utf8.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
++      utf8.push_back(static_cast<char>(0x80 | (c & 0x3F)));
++    }
++  }
++  env->ReleaseStringChars(json, chars);
++  send_request(static_cast<int>(client), utf8.c_str());
+ }
+ extern "C" JNIEXPORT jstring JNICALL
+ Java_org_vault_exporter_TdNative_receive(JNIEnv* env, jclass, jdouble seconds) {
+diff -ruN a/app/src/main/java/org/vault/exporter/ExportEngine.java b/app/src/main/java/org/vault/exporter/ExportEngine.java
+--- a/app/src/main/java/org/vault/exporter/ExportEngine.java	2026-10-24 07:49:09.177272935 +0000
++++ b/app/src/main/java/org/vault/exporter/ExportEngine.java	2026-10-24 07:39:01.283767108 +0000
+@@ -60,6 +60,32 @@
+       default:return null;
+     }
+   }
++  /** Content variants audited as having no standalone TDLib File to download.
++   * Other variants must be explicitly audited before the exporter may call an
++   * archive complete. This conservative list intentionally excludes messageText
++   * with a rich link preview: the preview can carry an embedded photo/video. */
++  private static boolean isVerifiedNonMediaContent(String contentType){
++    switch(contentType){
++      case "messageContact":
++      case "messageLocation":
++      case "messageVenue":
++      case "messagePoll":
++      case "messageDice":
++      case "messageCall":
++      case "messageChatChangeTitle":
++      case "messageChatDeletePhoto":
++      case "messageChatAddMembers":
++      case "messageChatDeleteMember":
++      case "messageChatJoinByLink":
++      case "messageChatJoinByRequest":
++      case "messageChatSetMessageAutoDeleteTime":
++      case "messagePinMessage":
++      case "messageScreenshotTaken":
++        return true;
++      default: return false;
++    }
++  }
++
+   private static String type(JSONObject msg){
+     JSONObject content=msg.optJSONObject("content");String name=content==null?"":content.optString("@type");
+     switch(name){
+@@ -221,8 +247,14 @@
+             if(!"other".equals(category)) throw new IOException("Медиа из сообщения "+msgId+" недоступно; экспорт можно повторить позже");
+             JSONObject content=msg.optJSONObject("content");
+             String contentType=content==null?"":content.optString("@type");
+-            if("messagePaidMedia".equals(contentType) || "messageStory".equals(contentType) || "messageGame".equals(contentType))
+-              throw new IOException("Тип вложения "+contentType+" пока не поддерживается; нельзя пометить экспорт полным");
++            // Fail closed for unknown Telegram message kinds. Many valid TDLib content
++            // variants carry embedded or multiple files (paid media, chat photos,
++            // gifts, link previews, etc.), so assuming "other" == "no media"
++            // silently produces a falsely complete archive.
++            if (!("messageText".equals(contentType) &&
++                  (content==null || content.optJSONObject("link_preview")==null)) &&
++                !isVerifiedNonMediaContent(contentType))
++              throw new IOException("Тип сообщения "+contentType+" пока не проверен на полноту вложений; прогресс сохранён");
+             continue;
+           }
+           int fileId=f.getInt("id");
+diff -ruN a/app/src/main/java/org/vault/exporter/MainActivity.java b/app/src/main/java/org/vault/exporter/MainActivity.java
+--- a/app/src/main/java/org/vault/exporter/MainActivity.java	2026-10-24 07:49:09.177691747 +0000
++++ b/app/src/main/java/org/vault/exporter/MainActivity.java	2026-10-24 07:45:41.072603047 +0000
+@@ -65,7 +65,7 @@
+   private void showOfflineDemo() {
+     new AlertDialog.Builder(this)
+       .setTitle("Офлайн-демонстрация")
+-      .setMessage("1. Авторизация в отдельном сеансе\n2. Выбор облачной переписки\n3. Скачивание ВСЕХ доступных вложений, даже без кэша\n4. Шифрование локального архива\n5. Проверка целостности и предложение выхода\n\nЭто только демонстрация шагов. Соединение с Telegram не выполняется.")
++      .setMessage("1. Авторизация в отдельном сеансе\n2. Выбор облачной переписки\n3. Скачивание поддерживаемых вложений, даже без кэша\n4. Шифрование локального архива\n5. Проверка целостности и предложение выхода\n\nЭто только демонстрация шагов. Соединение с Telegram не выполняется.")
+       .setPositiveButton("Понятно", null).show();
+   }
+   private void askBeforeConnect() {
+@@ -203,7 +203,7 @@
+     button("2. Скачать всё / продолжить экспорт",this::requestPassphrase);
+     button("Очистить незавершённый экспорт выбранного чата",this::confirmResetProgress);
+     button("Завершить только этот Telegram-сеанс", this::confirmLogout);
+-    message("Даже если фото или видео отсутствуют в кэше, TDLib скачает их с серверов Telegram. При повторном запуске уже зашифрованные страницы экспорта используются снова. После завершения можно безопасно выйти из отдельного сеанса.");
++    message("Для поддерживаемых типов фото и видео TDLib скачает исходные файлы, даже если кэш пуст. Неизвестные типы вложений останавливают экспорт с сохранением прогресса, чтобы архив не был ложно объявлен полным.");
+   }
+   private void chooseChat() {
+     showStatus("Загружаем список чатов…");
+diff -ruN a/ci-contract/verify_ci_contract.py b/ci-contract/verify_ci_contract.py
+--- a/ci-contract/verify_ci_contract.py	2026-10-24 07:49:09.178781192 +0000
++++ b/ci-contract/verify_ci_contract.py	2026-10-24 07:45:41.071648846 +0000
+@@ -9,7 +9,11 @@
+ assert 'git -C "$RUNNER_TEMP/td" rev-parse HEAD' in build, 'No source pin check'
+ assert '--build-arg "COMMIT_HASH=$TDLIB_SHA"' in build, 'Docker still builds moving master'
+ assert '--build-arg TDLIB_INTERFACE=JSON' in build, 'Must build JSON client'
++assert 'readelf -W --dyn-syms' in build and 'td_create_client_id td_send td_receive' in build, 'Missing exact native JSON ABI audit'
++assert 'tdlib-sha256.txt' in build and 'build-provenance.txt' in build, 'Missing reproducible native build evidence'
++assert 'unzip -Z1 "$APK" | grep -Fxq' in build, 'Missing exact APK entry validation'
+ assert 'bash RUN_ALL_OFFLINE.sh' in build, 'Build workflow missing complete offline suite'
++assert 'bash native-host-test/RUN_NATIVE_HOST_TEST.sh' in (root/'RUN_ALL_OFFLINE.sh').read_text(), 'Native JNI smoke not part of CI'
+ assert 'verifyExporterBuild' in (root/'app/build.gradle').read_text(), 'Guard missing'
+ assert 'test' in (root/'app/build.gradle').read_text(), 'Test DC flag missing'
+ print('PASS CI build contract: pinned TDLib',sha.group(1),'and complete offline suite')
+diff -ruN a/docs/RELEASE_GATES_RU.md b/docs/RELEASE_GATES_RU.md
+--- a/docs/RELEASE_GATES_RU.md	2026-10-24 07:49:09.179230701 +0000
++++ b/docs/RELEASE_GATES_RU.md	2026-10-24 07:45:41.073422054 +0000
+@@ -23,6 +23,8 @@
+ 
+ ## Блокирующие пункты для готового APK
+ - [ ] Реально собрать и установить APK с официальной TDLib pinned commit.
++- [ ] Сверить TDLib C JSON ABI и JNI Unicode на реальном Android, включая кириллицу, эмодзи и имена чатов.
++- [ ] Добавить обработку всех обнаруживаемых типов вложений, включая rich link previews и служебные медиа; сейчас неподдерживаемые типы блокируют полноту.
+ - [ ] Проверить авторизацию/код/2FA/выход только на тестовом аккаунте.
+ - [ ] Выгрузить тестовый чат со снятым кэшем и сравнить число и качество файлов с Telegram Desktop.
+ - [ ] Проверить сетевой трафик: только Telegram DC, без иных запросов приложения.
+diff -ruN a/integration-jvm/TestHardenedExportEngine.java b/integration-jvm/TestHardenedExportEngine.java
+--- a/integration-jvm/TestHardenedExportEngine.java	2026-10-24 07:49:09.179936847 +0000
++++ b/integration-jvm/TestHardenedExportEngine.java	2026-10-24 07:39:48.700702706 +0000
+@@ -108,6 +108,40 @@
+     }
+     ByteArrayOutputStream large=new ByteArrayOutputStream();send(longRoot,new TdGateway(longIds,longRoot),chat,large);
+     checkArchive(large.toByteArray(),longIds,8);
++    // An unfamiliar Telegram media-bearing content type cannot silently pass as
++    // an ordinary message. A failed page must remain resumable after fixing it.
++    for(String unsupported:new String[]{"messagePaidMedia", "messageChatChangePhoto", "messageImaginaryAttachment"}) {
++      File typeRoot=Files.createTempDirectory("hardened-unknown-type-").toFile();
++      TdGateway unsupportedGateway=new TdGateway(shortIds,typeRoot);
++      unsupportedGateway.contentOverride(10,new JSONObject().put("@type",unsupported)
++          .put("media",new JSONArray().put(new JSONObject().put("file",new JSONObject().put("id",4242)))));
++      boolean stopped=false;
++      try{send(typeRoot,unsupportedGateway,chat,new ByteArrayOutputStream());}
++      catch(IOException expected){stopped=expected.getMessage().contains(unsupported);}
++      yes(stopped,"Unsupported content was silently ignored: "+unsupported);
++      // A subsequent run of the same exporter with newly supported content is
++      // allowed to resume the already committed pages and finish accurately.
++      ByteArrayOutputStream afterUpdate=new ByteArrayOutputStream();
++      send(typeRoot,new TdGateway(shortIds,typeRoot),chat,afterUpdate);
++      checkArchive(afterUpdate.toByteArray(),shortIds,8);
++    }
++    File previewRoot=Files.createTempDirectory("hardened-link-preview-").toFile();
++    TdGateway preview=new TdGateway(shortIds,previewRoot);
++    preview.contentOverride(1,new JSONObject().put("@type","messageText")
++        .put("text",new JSONObject().put("text","Example link"))
++        .put("link_preview",new JSONObject().put("@type","linkPreviewPhoto")));
++    boolean previewRejected=false;
++    try{send(previewRoot,preview,chat,new ByteArrayOutputStream());}
++    catch(IOException expected){previewRejected=expected.getMessage().contains("messageText");}
++    yes(previewRejected,"Rich preview silently skipped");
++    File ordinaryRoot=Files.createTempDirectory("hardened-non-media-").toFile();
++    TdGateway ordinary=new TdGateway(shortIds,ordinaryRoot);
++    ordinary.contentOverride(1,new JSONObject().put("@type","messageContact")
++        .put("contact",new JSONObject().put("first_name","Test")));
++    ByteArrayOutputStream ordinaryArchive=new ByteArrayOutputStream();
++    send(ordinaryRoot,ordinary,chat,ordinaryArchive);
++    checkArchive(ordinaryArchive.toByteArray(),shortIds,8);
++    System.out.println("PASS strict content coverage: three unknown media variants and rich previews fail closed; progress resumes; known contact succeeds");
+     System.out.printf(Locale.ROOT,"PASS Hardened ExportEngine+TVS2+strict verifier: 250 and 2000 messages, eight media kinds, three outages, media retry, interrupted finalization, SHA-256, wrong password; bytes=%d%n",large.size());
+   }
+ }
+diff -ruN a/integration-jvm/fakes/org/vault/exporter/TdGateway.java b/integration-jvm/fakes/org/vault/exporter/TdGateway.java
+--- a/integration-jvm/fakes/org/vault/exporter/TdGateway.java	2026-10-24 07:49:09.180745798 +0000
++++ b/integration-jvm/fakes/org/vault/exporter/TdGateway.java	2026-10-24 07:39:48.700543005 +0000
+@@ -8,6 +8,8 @@
+   final long[] ids;final File root;
+   int calls,failHistoryAt,failFileId,failChatAt;
+   boolean inconsistentEmpty,protectedChat,secretChat,largeVideo;
++  final Map<Integer,JSONObject> overrides=new HashMap<>();
++  public void contentOverride(int position, JSONObject replacement){overrides.put(position,replacement);}
+   public TdGateway(long[] ids,File root){this.ids=ids;this.root=root;}
+   public void failOnHistoryCall(int n){failHistoryAt=n;}
+   public void failDownloadFor(int id){failFileId=id;}
+@@ -54,7 +56,7 @@
+       if(from>0)while(start<ids.length&&ids[start]>from)start++;
+       if(start>=ids.length)return new JSONObject().put("messages",arr);
+       for(int i=start;i<ids.length&&i<start+Math.min(7,limit);i++)
+-        arr.put(new JSONObject().put("id",ids[i]).put("sender_id",new JSONObject().put("@type","messageSenderUser").put("user_id",55)).put("content",content(i,ids[i])));
++        arr.put(new JSONObject().put("id",ids[i]).put("sender_id",new JSONObject().put("@type","messageSenderUser").put("user_id",55)).put("content",overrides.getOrDefault(i,content(i,ids[i]))));
+       return new JSONObject().put("messages",arr);
+     }
+     if(type.equals("downloadFile")){
+diff -ruN a/native-host-test/FakeTdJson.cpp b/native-host-test/FakeTdJson.cpp
+--- a/native-host-test/FakeTdJson.cpp	1970-01-01 00:00:00.000000000 +0000
++++ b/native-host-test/FakeTdJson.cpp	2026-10-24 07:44:19.767455604 +0000
+@@ -0,0 +1,10 @@
++// OFFLINE TEST ONLY. Intentionally fake: never bundle in an Android APK.
++#include <string>
++static std::string reply;
++extern "C" int td_create_client_id() { return 17; }
++extern "C" void td_send(int id, const char* data) {
++  reply = (id == 17 && data) ? std::string(data) : "";
++}
++extern "C" const char* td_receive(double) {
++  return reply.empty() ? nullptr : reply.c_str();
++}
+diff -ruN a/native-host-test/RUN_NATIVE_HOST_TEST.sh b/native-host-test/RUN_NATIVE_HOST_TEST.sh
+--- a/native-host-test/RUN_NATIVE_HOST_TEST.sh	1970-01-01 00:00:00.000000000 +0000
++++ b/native-host-test/RUN_NATIVE_HOST_TEST.sh	2026-10-24 07:44:19.774880344 +0000
+@@ -0,0 +1,15 @@
++#!/usr/bin/env bash
++set -euo pipefail
++cd "$(dirname "$0")/.."
++command -v g++ >/dev/null || { echo 'OFFLINE JNI TEST REQUIRE g++' >&2; exit 1; }
++command -v javac >/dev/null || { echo 'OFFLINE JNI TEST REQUIRE JDK' >&2; exit 1; }
++JAVA_HOME_DETECTED="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
++OUT=build/native-host-test
++mkdir -p "$OUT"
++g++ -shared -fPIC -std=c++17 -O2 -o "$OUT/libtdjson.so" native-host-test/FakeTdJson.cpp
++g++ -shared -fPIC -std=c++17 -O2 \
++  -I"$JAVA_HOME_DETECTED/include" -I"$JAVA_HOME_DETECTED/include/linux" \
++  -o "$OUT/libvaultbridge.so" app/src/main/cpp/vaultbridge.cpp -ldl
++javac -d "$OUT" app/src/main/java/org/vault/exporter/TdNative.java native-host-test/TestNativeHost.java
++LD_LIBRARY_PATH="$(pwd)/$OUT${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
++  java -Djava.library.path="$(pwd)/$OUT" -cp "$OUT" TestNativeHost
+diff -ruN a/native-host-test/TestNativeHost.java b/native-host-test/TestNativeHost.java
+--- a/native-host-test/TestNativeHost.java	1970-01-01 00:00:00.000000000 +0000
++++ b/native-host-test/TestNativeHost.java	2026-10-24 07:44:19.772371524 +0000
+@@ -0,0 +1,17 @@
++import org.vault.exporter.TdNative;
++public final class TestNativeHost {
++  private static void verify(String value) {
++    TdNative.send(17, value);
++    String actual=TdNative.receive(0.01);
++    if(!value.equals(actual))
++      throw new AssertionError("JNI UTF-8 roundtrip corrupted: expected="+value+" actual="+actual);
++  }
++  public static void main(String[] args) {
++    if (TdNative.createClient()!=17)throw new AssertionError("Incorrect client ID");
++    verify("{\"@type\":\"getChat\",\"chat_id\":1234}");
++    verify("{\"name\":\"Привет, мир\"}");
++    verify("{\"title\":\"Чат 🐈💙🚀\"}");
++    verify("{\"text\":\"\uD83D\uDE01\uD83E\uDDD1\u200D\uD83D\uDCBB\"}");
++    System.out.println("PASS JNI C++/Java native offline roundtrip: client ID, ASCII, Cyrillic, emoji, ZWJ");
++  }
++}
