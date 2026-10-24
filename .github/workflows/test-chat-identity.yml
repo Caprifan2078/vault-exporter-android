@@ -32,3 +32,20 @@ jobs:
               assert s.count(marker)==1, marker
           print('PASS: three identity safeguards in real v0.9 ExportEngine')
           PY
+
+      - name: Compile actual exporter with fake TDLib and exercise three cross-chat failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/src/Vault-Exporter-Android-v09/app/src/main/java/org/vault/exporter"
+          mkdir -p "$RUNNER_TEMP/fakes/org/vault/exporter" "$RUNNER_TEMP/classes"
+          cp exporter-integration/fakes/org/vault/exporter/TdGateway.java "$RUNNER_TEMP/fakes/org/vault/exporter/TdGateway.java"
+          python3 exporter-integration/patch_fake_identity.py "$RUNNER_TEMP/fakes/org/vault/exporter/TdGateway.java"
+          curl -fsSL --retry 3 https://repo.maven.apache.org/maven2/org/json/json/20240303/json-20240303.jar -o "$RUNNER_TEMP/org-json.jar"
+          javac -cp "$RUNNER_TEMP/org-json.jar" -d "$RUNNER_TEMP/classes" \
+            exporter-integration/fakes/android/content/Context.java \
+            exporter-integration/fakes/org/vault/exporter/SessionSecrets.java \
+            "$RUNNER_TEMP/fakes/org/vault/exporter/TdGateway.java" \
+            "$ROOT"/{ExportEngine,HistoryCursor,ResumeStore,ArchiveWriter,ArchiveVerifier,ChunkedVault,TelegramRateLimit}.java \
+            exporter-integration/TestIdentityGuard.java
+          java -Xmx256m -cp "$RUNNER_TEMP/classes:$RUNNER_TEMP/org-json.jar" TestIdentityGuard
