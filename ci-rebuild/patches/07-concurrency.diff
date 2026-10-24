@@ -1,0 +1,883 @@
+--- a/FILE_MANIFEST_SHA256.json
++++ b/FILE_MANIFEST_SHA256.json
+@@ -1,82 +1,336 @@
+ {
+-  "schema": "vault-build-safety-snapshot-v1",
+-  "source": "Vault_Exporter_JNI_Media_2026-10-24.zip",
++  "package": "Vault-Exporter-Android-Concurrency-Hardening-2026-10-24",
++  "source_baseline": "Vault_Exporter_Android_Build_Safety_2026-10-24.zip",
++  "source_tree_sha": "c96f19d41da58ca78457caa6c9cdd7f694ba9afb",
++  "test_status": "offline-suite PASS, no Android build",
+   "files": {
+-    ".github/workflows/build-debug-apk.yml": "75ef3c9b1be933818e6078699471c7f469e3f20f83a7459014b04ad5451d5f08",
+-    ".github/workflows/offline-security-tests.yml": "535561e4281afb30b3eb59ae540c6f04c8eba51d8aebf924051313e462840957",
+-    ".gitignore": "159364b5a1c713f3a36c7f572ae829b57b5a4bdf102b9d03d5046ebafd9b9ec3",
+-    "BUILD_HARDENING_REPORT_RU.md": "858b158d1acb5141ff76f90236c9a3af8b2869486c8536a08769e85a13b51252",
+-    "CONTINUATION_REPORT_RU.md": "cf6c5ff1471808e82b908061c67aa52e18091c1c90ca1ffd448e59a85cd66698",
+-    "FULL_TEST_LOG.txt": "5f939b92203290d4a8d3cbcdec9d6598a076fba4fe2daf5b00597d3232695a59",
+-    "FULL_TEST_LOG_2026-10-24_JNI.txt": "c22c8c90a54830237668ecc5174c5565027604b49810fbab9955adc7180b1b22",
+-    "HARDENING_REPORT_RU.md": "3d1d3714b3c2a2496e2c60669bbe4abd2dc47823b19e194fc1211935bf67073c",
+-    "INTEGRATION_REPORT_RU.md": "b7c2ce3ba6dac7e61ff265094868edb5005b1549e3f0e5c2fb423c3bf1cd9317",
+-    "JNI_AND_MEDIA_HARDENING_RU.md": "1662f964ba7b6afb5a8296e3ddd171937eaf04722f678cbc6569faeac17d0f32",
+-    "OFFLINE_TEST_RESULTS_2026-10-24.txt": "ce269b3c5db46120d49f37fa05f6c6d79a7abc79a6a36c04a3fee63d61ba6fdd",
+-    "README.md": "e2cd44a5333a83669cce4998ec9c974449ef6c9d3e2ae8c7c41d48d13411bc35",
+-    "RUN_ALL_OFFLINE.sh": "6cceed2c05783caffbb20a0d852ff872f8a260ecef488afe8cf6c4b7a5aa3bdd",
+-    "STATUS_RU.md": "0bc50895bb4c7608cedba0bd1ee2c6c2c62020e1e2499fdf476296b9480a758e",
+-    "TEST_RUN_RU.txt": "cfb779a4fec5fa90dadb1bcf9964883468d798fcbc77850887d4146785d1e36c",
+-    "VERIFIER_HARDENING_2026-10-24_RU.md": "b7eaa1b793107b96ee865d8a2073773d334b980f06953bbd4e7fbfd810a46bf3",
+-    "app/build.gradle": "34e61d12c3877dc6b209a789a4691c6e5f7653ec2f2ce7bd0a40bcc43819f1dd",
+-    "app/proguard-rules.pro": "d00b922fdaf82cd5f38acba299382bc33c88ccaa179fdfb5bfcaf0f51c27f4bc",
+-    "app/src/main/AndroidManifest.xml": "c0e88a26c1b19eb644af2e9a97787c412f50f0d586b91fa8b63d542219a58f64",
+-    "app/src/main/cpp/CMakeLists.txt": "2afd5b6a5f02daf4f461200c40cea127f957f353c59e618bf631f958787e2cd0",
+-    "app/src/main/cpp/vaultbridge.cpp": "9ce5d49e72d0a85b0c2c5c21f73eef3c288494284a7426350b57e01016a42a52",
+-    "app/src/main/java/org/vault/exporter/ArchiveVerifier.java": "4ee3e702a28fcfce61cd3f32800fb38d8d443362c30daebb4ac72bb42dd645f1",
+-    "app/src/main/java/org/vault/exporter/ArchiveWriter.java": "8a49bb192c969702aef390e29d9cb193f60858aa6573b96e20a316d6740bc35e",
+-    "app/src/main/java/org/vault/exporter/ChunkedVault.java": "6874c4f45e0b025ab52c98c0b0601cafef46305631ee64885fab840c16f01b16",
+-    "app/src/main/java/org/vault/exporter/ExportEngine.java": "70a81548156c4b1bd9e4f80240817be1b248eef5030dc7b65364550b1cd25a7c",
+-    "app/src/main/java/org/vault/exporter/HistoryCursor.java": "415266fdfac88999be3b011118263f4c300891963b55a47034f18996c7e8d1bc",
+-    "app/src/main/java/org/vault/exporter/MainActivity.java": "cc9c50c5d6184a7a33f110819602ff522b12e7157f4ce79fc124c57fa01a5a0e",
+-    "app/src/main/java/org/vault/exporter/ResumeStore.java": "b06e20c0f7856ed45bc4dd461d949895a88ec83ffbe97801c762eecc659d885d",
+-    "app/src/main/java/org/vault/exporter/SessionSecrets.java": "321fdc6e4a946fb5225136485940972b0b5791649fc5156dc2a0c8fdbbe6bf5f",
+-    "app/src/main/java/org/vault/exporter/StagingCipher.java": "2d503e7c6a8afb0b7905cb58940b22d2aace440c98fd0f8a916ca94f834ac59b",
+-    "app/src/main/java/org/vault/exporter/TdGateway.java": "684a4cc0829e29ec35ccfab1178147ac0bfdb83932ffcef0b3f80e64d2730585",
+-    "app/src/main/java/org/vault/exporter/TdNative.java": "5ee4a94f4706d21cef0243d98899fc2fdc9747f668b76b4a46c25f1083456b62",
+-    "app/src/main/java/org/vault/exporter/TelegramRateLimit.java": "9e570764b4a4bfd884cbbd1b6b222612e94638d88c10928dfa2f1ef0d6cb3663",
+-    "app/src/main/jniLibs/arm64-v8a/README.txt": "c306d0386e885edace8d7207dd51f80f1ee0a7f184575c2295aca21dc30511de",
+-    "app/src/main/res/xml/data_extraction_rules.xml": "cd3613bb8f401f7e5ca7671c9441fdd712d2d411b470fdfb0e251e986fa51449",
+-    "build.gradle": "a17900030e5094e7c68b9cdd4a833a63a16a8ba21eef8336f4a4b39f35b35d75",
+-    "ci-contract/verify_ci_contract.py": "25ae8eccbda2cbee00afcfb238321fd045052af80b44c6f8f20fe6c962ead3e4",
+-    "docs/BUILD_APK_NO_COMMANDS_RU.md": "164c4a43486befa8542fb4e2858e015eab6354e481284da79330519beb000607",
+-    "docs/BUILD_APK_RU.md": "ea160b93debd772aeabb83ce5dc70886543b4041d71f6a1365c5e67f0ea705b0",
+-    "docs/FORMAT_RU.md": "2c1eecaed290eae8a8883808f533eb2b764e8c668c63d9252b6fffbf6714d2f5",
+-    "docs/RELEASE_GATES_RU.md": "b180b649617600faff9548ffd5845f0aa684865fad4d7711c99be3ea21a61669",
+-    "docs/SECURITY_REVIEW_V07_RU.md": "de5cd9a36d151f4ccb92c071f64aa32a2dd25b09981aa63c20b39e5be5ccd34b",
+-    "docs/SECURITY_RU.md": "ac11bd8b1b8e5b5780d4b78baf53df3e6a4ef6d1bb29914244462ff69afa9d57",
+-    "gradle.properties": "fdcda40a82e36d5031ec21ee8685e7275cf30d5bb916927893a6687b70b5006c",
+-    "integration-jvm/RUN_INTEGRATION_JVM.sh": "73a5a7a99ccd0712d2b1db3af5319668514bdc6071d8d1df8c05808e56617616",
+-    "integration-jvm/TestEngineBoundedMemory.java": "d5bab4d0df515c71d5c4ca947bc00280cde5a67e1b2bda3a6009071b9d10d9c1",
+-    "integration-jvm/TestHardenedExportEngine.java": "a2a5b3a69531b3f8ec4535fc750765d414df2fb72723681af0e2f83d9d59700e",
+-    "integration-jvm/fakes/android/content/Context.java": "7e249a2add000f9950601e9642bdd03ef757f84ce3706844d5b5ddb7ebe88817",
+-    "integration-jvm/fakes/org/json/JSONArray.java": "d3f2a6ab624bd91bf1fb0fd3238e93f9a4f27d8fb3fd21c639ad6f4e34c38769",
+-    "integration-jvm/fakes/org/json/JSONException.java": "a8ba4822228524adde2a943ac6a7cf06acb8f2b224c4a82dd3dac1faea4dfe1d",
+-    "integration-jvm/fakes/org/json/JSONObject.java": "762f485404dc1498e775c34284958780dd81bdaae42a9e984c364ec0ee313733",
+-    "integration-jvm/fakes/org/vault/exporter/SessionSecrets.java": "f31905c97b99eccb32786a7c2f180525210e3b5f0102c7d5a873ab07742d3bd9",
+-    "integration-jvm/fakes/org/vault/exporter/TdGateway.java": "44dc7c42ac415ca8fd24026b3523f07461844924cd5d5478fe4a2a81a7f052aa",
+-    "native-host-test/FakeTdJson.cpp": "e44e132447837ed17b73c7c99d1e009e2d995e31e38f10a9a175ca8f5ff35c76",
+-    "native-host-test/RUN_NATIVE_HOST_TEST.sh": "04b613ffab77f0a40d9f404e102990334957fc38f6f3a998378b8cc347dc95af",
+-    "native-host-test/TestNativeHost.java": "a2d8ffdbfe188a79904b221336555aec3f7d7afd2186dea081c5a5da11cf53a7",
+-    "scripts/preflight.py": "76e2c2f09092271815bdc8a23100588d997c48fcba12aae1a5f578ea01c0fe75",
+-    "scripts/prepare_tdlib_android.py": "b010c17486e8e400f501138c24af457ebda2d73997eb3e7b117e1c0148f5499a",
+-    "scripts/security_gate.py": "d5ffa35910bf6de6fd07df119f079615a037bf8ec0a0500c8d22ae21c1d1eb93",
+-    "scripts/verify_tdlib_elf.py": "76f4c8aa206db8adecfd0d858888f46b77a3ae4939fd55208ffcf0b52c4026cf",
+-    "settings.gradle": "74611a14dce2bfa33838b20cc53eadb0d4c459ae563588423556065822e4bf5d",
+-    "tests/RUN_BUILD_SAFETY_TESTS.py": "eaca43e4144276d52a174e3393695a0a1bc4bff918e68560479030ded0e126e6",
+-    "tests/RUN_TESTS_OFFLINE.sh": "f4ed98e2900fe11d4394641df18000e6dee3cc5018c1a73ed0dc5da3223dfb9a",
+-    "tests/RunCryptoTests.java": "ca2630477777fdd81105a42f1d22aeddaf9ffffe5088394debef40826607a6be",
+-    "tests/RunHistoryCursorHardeningTests.java": "cab2f8e028bed4ee89fb5e2aa558814d4843e6f7ef886e2f2f8cf1ab33f1cc2a",
+-    "tests/RunPipelineTests.java": "c0c36c9c168095b0c4f77684864256a9af2e5295cad7e8d5be74d1403cee7a73",
+-    "tests/RunRateLimitTests.java": "0af495408e6df70d36d3a1234e17de3c3a686b4c6f24336b5c5d4abed2e5d728",
+-    "tests/RunResumeTests.java": "d2e0105a676397964940c6907c086c10379976fa9dffba6d53a803c0582cd686",
+-    "tests/RunSemanticArchiveVerifierTests.java": "55f96ceb05cf797e4299ff006ff4aff1e7c50f88a9fb2c51d121067eb9151dee",
+-    "tests/RunStagingBoundedMemoryTest.java": "fbaf59554b493f1b22a84f456612a05c2c36aef7b0f2a8c8778acc18a586af94",
+-    "tests/RunStagingV2HardeningTests.java": "3f7084e12546bae8d718d84ea9591a2904a7485ad699a6fcebb3d3173d02262b",
+-    "tests/RunVerifierBoundedMemoryTest.java": "cbae2013af8913791ef81a264ae8ba83a7ea5a396a648f30186017c4a0ac0633",
+-    "tests/sample_fake_chat.tva": "06a9ec1538cf4c03eafa33067360ac66e313f2e60366043de40f4d7f37a7c474",
+-    "transport-jvm/RUN_TRANSPORT_JVM.sh": "cffdbc072bf8160ee99d0e562b27dedcbb80b8de57330c21f16c1be9ab70f51f",
+-    "transport-jvm/TestTdGatewayLifecycle.java": "40f54d47e55a9320f2df6ff59e420484d6f898f9a5d6ee6fd333b11efa273560",
+-    "transport-jvm/fakes/org/vault/exporter/TdNative.java": "9f190afc6da679092b882aa4f259c62028aa9c02e5d9f2cc39a503daebe56409"
++    ".github/workflows/build-debug-apk.yml": {
++      "sha256": "75ef3c9b1be933818e6078699471c7f469e3f20f83a7459014b04ad5451d5f08",
++      "bytes": 5517
++    },
++    ".github/workflows/offline-security-tests.yml": {
++      "sha256": "535561e4281afb30b3eb59ae540c6f04c8eba51d8aebf924051313e462840957",
++      "bytes": 541
++    },
++    ".gitignore": {
++      "sha256": "159364b5a1c713f3a36c7f572ae829b57b5a4bdf102b9d03d5046ebafd9b9ec3",
++      "bytes": 88
++    },
++    "BUILD_HARDENING_REPORT_RU.md": {
++      "sha256": "858b158d1acb5141ff76f90236c9a3af8b2869486c8536a08769e85a13b51252",
++      "bytes": 6444
++    },
++    "CONTINUATION_REPORT_RU.md": {
++      "sha256": "cf6c5ff1471808e82b908061c67aa52e18091c1c90ca1ffd448e59a85cd66698",
++      "bytes": 7008
++    },
++    "FULL_TEST_LOG.txt": {
++      "sha256": "5f939b92203290d4a8d3cbcdec9d6598a076fba4fe2daf5b00597d3232695a59",
++      "bytes": 1455
++    },
++    "FULL_TEST_LOG_2026-10-24_JNI.txt": {
++      "sha256": "c22c8c90a54830237668ecc5174c5565027604b49810fbab9955adc7180b1b22",
++      "bytes": 1834
++    },
++    "HARDENING_REPORT_RU.md": {
++      "sha256": "3d1d3714b3c2a2496e2c60669bbe4abd2dc47823b19e194fc1211935bf67073c",
++      "bytes": 9589
++    },
++    "INTEGRATION_REPORT_RU.md": {
++      "sha256": "b7c2ce3ba6dac7e61ff265094868edb5005b1549e3f0e5c2fb423c3bf1cd9317",
++      "bytes": 8828
++    },
++    "JNI_AND_MEDIA_HARDENING_RU.md": {
++      "sha256": "1662f964ba7b6afb5a8296e3ddd171937eaf04722f678cbc6569faeac17d0f32",
++      "bytes": 7038
++    },
++    "LATEST_OFFLINE_TEST_LOG_2026-10-24.txt": {
++      "sha256": "da3063507537178e87539f288a6f82bce80c0fbb2d7113af5ed8535b383ba543",
++      "bytes": 1951
++    },
++    "OFFLINE_TEST_RESULTS_2026-10-24.txt": {
++      "sha256": "ce269b3c5db46120d49f37fa05f6c6d79a7abc79a6a36c04a3fee63d61ba6fdd",
++      "bytes": 1931
++    },
++    "README.md": {
++      "sha256": "1c119afc2e99ef7c08134971516f40dd614dc8c87e430b3c55ed0df0fe6dac8d",
++      "bytes": 8922
++    },
++    "RUN_ALL_OFFLINE.sh": {
++      "sha256": "6cceed2c05783caffbb20a0d852ff872f8a260ecef488afe8cf6c4b7a5aa3bdd",
++      "bytes": 304
++    },
++    "STAGING_CONCURRENCY_REVIEW_2026-10-24_RU.md": {
++      "sha256": "e8e115b4ec4c7c50e30ccc5695a0acdea5305ce08f1fc605488fea50877c6fff",
++      "bytes": 6322
++    },
++    "STATUS_RU.md": {
++      "sha256": "0bc50895bb4c7608cedba0bd1ee2c6c2c62020e1e2499fdf476296b9480a758e",
++      "bytes": 3517
++    },
++    "TEST_RUN_RU.txt": {
++      "sha256": "cfb779a4fec5fa90dadb1bcf9964883468d798fcbc77850887d4146785d1e36c",
++      "bytes": 1027
++    },
++    "VERIFIER_HARDENING_2026-10-24_RU.md": {
++      "sha256": "b7eaa1b793107b96ee865d8a2073773d334b980f06953bbd4e7fbfd810a46bf3",
++      "bytes": 5287
++    },
++    "app/build.gradle": {
++      "sha256": "34e61d12c3877dc6b209a789a4691c6e5f7653ec2f2ce7bd0a40bcc43819f1dd",
++      "bytes": 3300
++    },
++    "app/proguard-rules.pro": {
++      "sha256": "d00b922fdaf82cd5f38acba299382bc33c88ccaa179fdfb5bfcaf0f51c27f4bc",
++      "bytes": 105
++    },
++    "app/src/main/AndroidManifest.xml": {
++      "sha256": "c0e88a26c1b19eb644af2e9a97787c412f50f0d586b91fa8b63d542219a58f64",
++      "bytes": 954
++    },
++    "app/src/main/cpp/CMakeLists.txt": {
++      "sha256": "2afd5b6a5f02daf4f461200c40cea127f957f353c59e618bf631f958787e2cd0",
++      "bytes": 252
++    },
++    "app/src/main/cpp/vaultbridge.cpp": {
++      "sha256": "9ce5d49e72d0a85b0c2c5c21f73eef3c288494284a7426350b57e01016a42a52",
++      "bytes": 4311
++    },
++    "app/src/main/java/org/vault/exporter/ArchiveVerifier.java": {
++      "sha256": "4ee3e702a28fcfce61cd3f32800fb38d8d443362c30daebb4ac72bb42dd645f1",
++      "bytes": 14556
++    },
++    "app/src/main/java/org/vault/exporter/ArchiveWriter.java": {
++      "sha256": "8a49bb192c969702aef390e29d9cb193f60858aa6573b96e20a316d6740bc35e",
++      "bytes": 2437
++    },
++    "app/src/main/java/org/vault/exporter/ChunkedVault.java": {
++      "sha256": "6874c4f45e0b025ab52c98c0b0601cafef46305631ee64885fab840c16f01b16",
++      "bytes": 6390
++    },
++    "app/src/main/java/org/vault/exporter/ExportEngine.java": {
++      "sha256": "70a81548156c4b1bd9e4f80240817be1b248eef5030dc7b65364550b1cd25a7c",
++      "bytes": 21661
++    },
++    "app/src/main/java/org/vault/exporter/HistoryCursor.java": {
++      "sha256": "415266fdfac88999be3b011118263f4c300891963b55a47034f18996c7e8d1bc",
++      "bytes": 1473
++    },
++    "app/src/main/java/org/vault/exporter/MainActivity.java": {
++      "sha256": "1b6e5497b2b62084e61b1af1cbc8513157f8e53746295e1648058ccc829cdbbd",
++      "bytes": 31943
++    },
++    "app/src/main/java/org/vault/exporter/ResumeStore.java": {
++      "sha256": "8810cf2072ea111b31b1fca9cd8f82df1fa181b9489c31554ef3b4f023c88b21",
++      "bytes": 12474
++    },
++    "app/src/main/java/org/vault/exporter/SessionSecrets.java": {
++      "sha256": "321fdc6e4a946fb5225136485940972b0b5791649fc5156dc2a0c8fdbbe6bf5f",
++      "bytes": 2959
++    },
++    "app/src/main/java/org/vault/exporter/StagingCipher.java": {
++      "sha256": "2d503e7c6a8afb0b7905cb58940b22d2aace440c98fd0f8a916ca94f834ac59b",
++      "bytes": 5947
++    },
++    "app/src/main/java/org/vault/exporter/TdGateway.java": {
++      "sha256": "684a4cc0829e29ec35ccfab1178147ac0bfdb83932ffcef0b3f80e64d2730585",
++      "bytes": 4053
++    },
++    "app/src/main/java/org/vault/exporter/TdNative.java": {
++      "sha256": "5ee4a94f4706d21cef0243d98899fc2fdc9747f668b76b4a46c25f1083456b62",
++      "bytes": 399
++    },
++    "app/src/main/java/org/vault/exporter/TelegramRateLimit.java": {
++      "sha256": "9e570764b4a4bfd884cbbd1b6b222612e94638d88c10928dfa2f1ef0d6cb3663",
++      "bytes": 1167
++    },
++    "app/src/main/jniLibs/arm64-v8a/README.txt": {
++      "sha256": "c306d0386e885edace8d7207dd51f80f1ee0a7f184575c2295aca21dc30511de",
++      "bytes": 223
++    },
++    "app/src/main/res/xml/data_extraction_rules.xml": {
++      "sha256": "cd3613bb8f401f7e5ca7671c9441fdd712d2d411b470fdfb0e251e986fa51449",
++      "bytes": 572
++    },
++    "build.gradle": {
++      "sha256": "a17900030e5094e7c68b9cdd4a833a63a16a8ba21eef8336f4a4b39f35b35d75",
++      "bytes": 69
++    },
++    "ci-contract/verify_ci_contract.py": {
++      "sha256": "25ae8eccbda2cbee00afcfb238321fd045052af80b44c6f8f20fe6c962ead3e4",
++      "bytes": 1829
++    },
++    "docs/BUILD_APK_NO_COMMANDS_RU.md": {
++      "sha256": "164c4a43486befa8542fb4e2858e015eab6354e481284da79330519beb000607",
++      "bytes": 3387
++    },
++    "docs/BUILD_APK_RU.md": {
++      "sha256": "ea160b93debd772aeabb83ce5dc70886543b4041d71f6a1365c5e67f0ea705b0",
++      "bytes": 3175
++    },
++    "docs/FORMAT_RU.md": {
++      "sha256": "2c1eecaed290eae8a8883808f533eb2b764e8c668c63d9252b6fffbf6714d2f5",
++      "bytes": 6278
++    },
++    "docs/RELEASE_GATES_RU.md": {
++      "sha256": "b180b649617600faff9548ffd5845f0aa684865fad4d7711c99be3ea21a61669",
++      "bytes": 5522
++    },
++    "docs/SECURITY_REVIEW_V07_RU.md": {
++      "sha256": "de5cd9a36d151f4ccb92c071f64aa32a2dd25b09981aa63c20b39e5be5ccd34b",
++      "bytes": 4053
++    },
++    "docs/SECURITY_RU.md": {
++      "sha256": "ac11bd8b1b8e5b5780d4b78baf53df3e6a4ef6d1bb29914244462ff69afa9d57",
++      "bytes": 7567
++    },
++    "gradle.properties": {
++      "sha256": "fdcda40a82e36d5031ec21ee8685e7275cf30d5bb916927893a6687b70b5006c",
++      "bytes": 76
++    },
++    "integration-jvm/RUN_INTEGRATION_JVM.sh": {
++      "sha256": "73a5a7a99ccd0712d2b1db3af5319668514bdc6071d8d1df8c05808e56617616",
++      "bytes": 646
++    },
++    "integration-jvm/TestEngineBoundedMemory.java": {
++      "sha256": "d5bab4d0df515c71d5c4ca947bc00280cde5a67e1b2bda3a6009071b9d10d9c1",
++      "bytes": 1244
++    },
++    "integration-jvm/TestHardenedExportEngine.java": {
++      "sha256": "a2a5b3a69531b3f8ec4535fc750765d414df2fb72723681af0e2f83d9d59700e",
++      "bytes": 9962
++    },
++    "integration-jvm/fakes/android/content/Context.java": {
++      "sha256": "7e249a2add000f9950601e9642bdd03ef757f84ce3706844d5b5ddb7ebe88817",
++      "bytes": 240
++    },
++    "integration-jvm/fakes/org/json/JSONArray.java": {
++      "sha256": "d3f2a6ab624bd91bf1fb0fd3238e93f9a4f27d8fb3fd21c639ad6f4e34c38769",
++      "bytes": 627
++    },
++    "integration-jvm/fakes/org/json/JSONException.java": {
++      "sha256": "a8ba4822228524adde2a943ac6a7cf06acb8f2b224c4a82dd3dac1faea4dfe1d",
++      "bytes": 178
++    },
++    "integration-jvm/fakes/org/json/JSONObject.java": {
++      "sha256": "762f485404dc1498e775c34284958780dd81bdaae42a9e984c364ec0ee313733",
++      "bytes": 5130
++    },
++    "integration-jvm/fakes/org/vault/exporter/SessionSecrets.java": {
++      "sha256": "f31905c97b99eccb32786a7c2f180525210e3b5f0102c7d5a873ab07742d3bd9",
++      "bytes": 349
++    },
++    "integration-jvm/fakes/org/vault/exporter/TdGateway.java": {
++      "sha256": "44dc7c42ac415ca8fd24026b3523f07461844924cd5d5478fe4a2a81a7f052aa",
++      "bytes": 5288
++    },
++    "native-host-test/FakeTdJson.cpp": {
++      "sha256": "e44e132447837ed17b73c7c99d1e009e2d995e31e38f10a9a175ca8f5ff35c76",
++      "bytes": 375
++    },
++    "native-host-test/RUN_NATIVE_HOST_TEST.sh": {
++      "sha256": "04b613ffab77f0a40d9f404e102990334957fc38f6f3a998378b8cc347dc95af",
++      "bytes": 860
++    },
++    "native-host-test/TestNativeHost.java": {
++      "sha256": "a2d8ffdbfe188a79904b221336555aec3f7d7afd2186dea081c5a5da11cf53a7",
++      "bytes": 798
++    },
++    "scripts/preflight.py": {
++      "sha256": "76e2c2f09092271815bdc8a23100588d997c48fcba12aae1a5f578ea01c0fe75",
++      "bytes": 1150
++    },
++    "scripts/prepare_tdlib_android.py": {
++      "sha256": "b010c17486e8e400f501138c24af457ebda2d73997eb3e7b117e1c0148f5499a",
++      "bytes": 1992
++    },
++    "scripts/security_gate.py": {
++      "sha256": "d5ffa35910bf6de6fd07df119f079615a037bf8ec0a0500c8d22ae21c1d1eb93",
++      "bytes": 2553
++    },
++    "scripts/verify_tdlib_elf.py": {
++      "sha256": "76f4c8aa206db8adecfd0d858888f46b77a3ae4939fd55208ffcf0b52c4026cf",
++      "bytes": 3018
++    },
++    "settings.gradle": {
++      "sha256": "74611a14dce2bfa33838b20cc53eadb0d4c459ae563588423556065822e4bf5d",
++      "bytes": 282
++    },
++    "tests/HoldResumeLockChild.java": {
++      "sha256": "8869aa2208653abfde6427845a3116aa7c2e763e4e468b644c8e244d4aecca9d",
++      "bytes": 570
++    },
++    "tests/RUN_ACTIVITY_SELECTION_SAFETY_TESTS.py": {
++      "sha256": "8e8e35ffab0fd14aae9ab6d1883e7f0b057e416d0141a124505cc6811882416d",
++      "bytes": 2813
++    },
++    "tests/RUN_BUILD_SAFETY_TESTS.py": {
++      "sha256": "82935c96ab9f1992608a4be78c816f2fc257f85ecd775513a9fe8586eba01505",
++      "bytes": 4199
++    },
++    "tests/RUN_TESTS_OFFLINE.sh": {
++      "sha256": "94aee01a1f0df9cb76639c8fc9b9721571f6473aa138fcb9a612b961c1553c44",
++      "bytes": 1040
++    },
++    "tests/RunCryptoTests.java": {
++      "sha256": "ca2630477777fdd81105a42f1d22aeddaf9ffffe5088394debef40826607a6be",
++      "bytes": 3054
++    },
++    "tests/RunExclusiveResumeLockTests.java": {
++      "sha256": "d1b4d8e1185e8cea7268920363bf8508e0370a8243dd98f62eb91cb836a39e31",
++      "bytes": 4765
++    },
++    "tests/RunHistoryCursorHardeningTests.java": {
++      "sha256": "cab2f8e028bed4ee89fb5e2aa558814d4843e6f7ef886e2f2f8cf1ab33f1cc2a",
++      "bytes": 1883
++    },
++    "tests/RunPipelineTests.java": {
++      "sha256": "c0c36c9c168095b0c4f77684864256a9af2e5295cad7e8d5be74d1403cee7a73",
++      "bytes": 3381
++    },
++    "tests/RunRateLimitTests.java": {
++      "sha256": "0af495408e6df70d36d3a1234e17de3c3a686b4c6f24336b5c5d4abed2e5d728",
++      "bytes": 729
++    },
++    "tests/RunResumeTests.java": {
++      "sha256": "d2e0105a676397964940c6907c086c10379976fa9dffba6d53a803c0582cd686",
++      "bytes": 3330
++    },
++    "tests/RunSemanticArchiveVerifierTests.java": {
++      "sha256": "55f96ceb05cf797e4299ff006ff4aff1e7c50f88a9fb2c51d121067eb9151dee",
++      "bytes": 7048
++    },
++    "tests/RunStagingBoundedMemoryTest.java": {
++      "sha256": "fbaf59554b493f1b22a84f456612a05c2c36aef7b0f2a8c8778acc18a586af94",
++      "bytes": 969
++    },
++    "tests/RunStagingV2HardeningTests.java": {
++      "sha256": "3f7084e12546bae8d718d84ea9591a2904a7485ad699a6fcebb3d3173d02262b",
++      "bytes": 6359
++    },
++    "tests/RunVerifierBoundedMemoryTest.java": {
++      "sha256": "cbae2013af8913791ef81a264ae8ba83a7ea5a396a648f30186017c4a0ac0633",
++      "bytes": 2435
++    },
++    "tests/TryResumeLockChild.java": {
++      "sha256": "126dabe798e19677f79c779b0921fd101e17cdc17f0a0df144580092a244d7e8",
++      "bytes": 476
++    },
++    "tests/sample_fake_chat.tva": {
++      "sha256": "06a9ec1538cf4c03eafa33067360ac66e313f2e60366043de40f4d7f37a7c474",
++      "bytes": 256921
++    },
++    "transport-jvm/RUN_TRANSPORT_JVM.sh": {
++      "sha256": "cffdbc072bf8160ee99d0e562b27dedcbb80b8de57330c21f16c1be9ab70f51f",
++      "bytes": 414
++    },
++    "transport-jvm/TestTdGatewayLifecycle.java": {
++      "sha256": "40f54d47e55a9320f2df6ff59e420484d6f898f9a5d6ee6fd333b11efa273560",
++      "bytes": 3592
++    },
++    "transport-jvm/fakes/org/vault/exporter/TdNative.java": {
++      "sha256": "9f190afc6da679092b882aa4f259c62028aa9c02e5d9f2cc39a503daebe56409",
++      "bytes": 1028
++    }
+   }
+ }
+--- /dev/null
++++ b/LATEST_OFFLINE_TEST_LOG_2026-10-24.txt
+@@ -0,0 +1,20 @@
++PASS: authenticated streaming, >3 blocks, password, tampering, truncation, ZIP entries, path filtering; bytes=788509
++PASS resume: restart, reuse, confidentiality, isolation, wrong key, tamper
++PASS pipeline: encrypted staging -> password archive -> verified media + messages
++PASS: Telegram rate-limit parser
++PASS 42 TVS2/JVM checks (boundaries, GCM authentication, replay, truncation, exact terminator, checkpoint, legacy)
++PASS 204083 checks: 100000 sparse IDs, 2037 short pages, duplicates/orders rejected
++PASS 36 verifier fixtures: complete archive + adversarial counts, ids, malformed JSON, tamper, path and missing file rejection
++PASS: per-chat lock, cross-process exclusion, crash recovery after SIGKILL, reopening and double-close safety
++PASS: streaming 48MiB media staging under JVM 32MiB heap
++PASS: independent SHA-256/length verification for 64 MiB media under JVM 32 MiB heap
++PASS: static manifest, backup and outbound-code safeguards (not a security audit)
++PASS: test DC default, production opt-in, separate app identities, no auto-connect
++PASS: 15 static Android selection/picker/worker lifecycle safety contracts
++PASS strict content coverage: three unknown media variants and rich previews fail closed; progress resumes; known contact succeeds
++PASS Hardened ExportEngine+TVS2+strict verifier: 250 and 2000 messages, eight media kinds, three outages, media retry, interrupted finalization, SHA-256, wrong password; bytes=152000
++PASS bounded-memory real ExportEngine+TVS2+strict ArchiveVerifier: 48 MiB video @ -Xmx32m, TVA bytes=58511
++PASS: 150 cancellations, awaited timeout, late/out-of-order replies, and session stop release pending work (fake TDLib)
++PASS JNI C++/Java native offline roundtrip: client ID, ASCII, Cyrillic, emoji, ZWJ
++PASS CI build contract: pinned TDLib ea3f69ce11aef458bfbb09869b809ede4447486f and complete offline suite
++PASS: pinned arm64-only TDLib build gate, ELF ABI negative fixtures, picker password-loss safety
+--- a/README.md
++++ b/README.md
+@@ -54,3 +54,10 @@
+ 
+ См. [`BUILD_HARDENING_REPORT_RU.md`](BUILD_HARDENING_REPORT_RU.md).
+ Теперь сборочная инструкция закрепляет только arm64-v8a, проверяет `libtdjson.so` по ELF/JSON ABI и не предоставляет Telegram developer secrets всему GitHub Actions job. Android APK и работа с настоящей TDLib пока **не** проверены; никакой пользовательский Telegram аккаунт не подключался.
++
++## 2026-10-24: защита от конкурентного экспорта
++См. `STAGING_CONCURRENCY_REVIEW_2026-10-24_RU.md`. Добавлены
++системная блокировка staging для конкретного чата (в т.ч. между процессами),
++защита от смены выбранного чата между picker и worker, тесты отмены/перезапуска
++операций. `RUN_ALL_OFFLINE.sh` запускает новые JVM и статические проверки.
++**APK пока не собран, живой Telegram не проверен.**
+--- /dev/null
++++ b/STAGING_CONCURRENCY_REVIEW_2026-10-24_RU.md
+@@ -0,0 +1,28 @@
++# Vault Exporter — защита от гонок состояния, 24.10.2026
++
++## Отправная точка
++Проверяемая рабочая копия: `Vault_Exporter_Android_Build_Safety_2026-10-24.zip`. Исходная ветка приватного GitHub `main` в предыдущей проверке находилась на `c96f19d41da58ca78457caa6c9cdd7f694ba9afb`. Новые изменения не отправлялись в `main`.
++
++## Исправления
++1. **Выбор чата при создании архива.** `MainActivity` сохраняет ID чата в момент открытия диалога пароля, затем при открытии системного picker; при смене выбора до возвращения от picker операция прерывается. Пароль и временный chat ID очищаются при отмене, ошибке и уничтожении Activity. Это не заменяет Android-instrumentation тестов.
++2. **Очистка прогресса.** Целевой chat ID теперь фиксируется до постановки очистки в очередь ExecutorService. Параллельное изменение UI не перенаправляет очистку на другой чат. Пока выбирается путь сохранения, очистка блокируется.
++3. **Конкурентные записи.** `ResumeStore` устанавливает `FileLock` на стабильном файле `.locks/chat-<id>.lock` ВНЕ каталога чата, который может стираться после успешного экспорта.
++4. **Закрытие чужого файлового дескриптора.** В тестах найдена тонкая POSIX-особенность: второй неудачный `tryLock` в том же процессе, при закрытии своего дескриптора, мог освободить ранее установленный системный файловый lock и позволить другому процессу войти. Добавлена `ConcurrentHashMap.newKeySet()`-бронь пути до открытия файла, тем самым второй дескриптор не появляется; системная блокировка продолжает работать между JVM-процессами.
++5. **Идемпотентное закрытие.** `ResumeStore.close()` теперь `synchronized`, повторный вызов не снимает in-process защиту нового владельца.
++6. **Неодобренный DocumentProvider.** При отказе в облачном провайдере приложение пытается удалить пустой файл-заглушку и очищает пароль.
++
++## Результаты проверок
++- `tests/RunExclusiveResumeLockTests.java` — реальная файловая блокировка внутри JVM, независимый дочерний JVM-процесс, открытие после закрытия, защита после `erase()` и повторного `close()`: PASS.
++- `tests/HoldResumeLockChild.java` — дочерний процесс с сохранённым checkpoint принудительно завершён (`destroyForcibly()`); следующий процесс успешно возобновил доступ к хранилищу, без объявления незаконченной истории завершённой: PASS.
++- `tests/RUN_ACTIVITY_SELECTION_SAFETY_TESTS.py` — 15 статических контрактов состояния Activity: PASS. Это проверка исходного кода, **не** выполнение Activity на Android.
++- Остальные JVM-тесты (TVS2, восстановление, проверка архива, синтетическая история, большой файл): PASS в отдельном повторном прогоне.
++- Полный набор `RUN_ALL_OFFLINE.sh`: **PASS, exit 0** после всех изменений, включая тест принудительного завершения. Итоговый лог: `LATEST_OFFLINE_TEST_LOG_2026-10-24.txt`.
++
++## Что НЕ доказано
++- Нет APK, собранного и установленного с официальной TDLib в Android SDK. Не проведены Android UI/instrumentation тесты (включая системный picker и уничтожение процесса).
++- Нет реальных тестов на Telegram test DC; основной Telegram-аккаунт не подключали и не следует подключать.
++- `FileLock` защищает конкретное хранилище чата от двух конкурирующих `ResumeStore`. Он не является доказательством защиты всего приложения от любых межпроцессных гонок (например, параллельный выход из Telegram и удаление всех данных) и не доказывает полноту реальной облачной истории.
++- Проверки файла и хешей подтверждают внутреннюю целостность, но не наличие удалённых сообщений, недоступного контента и не всех богатых видов TDLib.
++
++## Следующий проверочный этап
++В отдельной GitHub-ветке (не `main`) нужно разместить **полный** исходный проект, выполнить GitHub Actions сборку официальной TDLib с закреплённым SHA и получить APK с проверенным ELF/подписью. Далее — запуск на изолированном Android-эмуляторе без входа и, только после этого, test DC и отдельный тестовый аккаунт. Никакого утверждения «без риска блокировки» до этого делать нельзя.
+--- a/app/src/main/java/org/vault/exporter/MainActivity.java
++++ b/app/src/main/java/org/vault/exporter/MainActivity.java
+@@ -29,6 +29,8 @@
+   private final java.util.concurrent.atomic.AtomicBoolean initializing = new java.util.concurrent.atomic.AtomicBoolean(false);
+   private final int CREATE_ARCHIVE = 718;
+   private char[] pendingPassphrase;
++  // The document picker is an asynchronous operation; preserve the original chat.
++  private long pendingChatId = 0;
+   private final int BACKGROUND=Color.rgb(10, 18, 32), WHITE=0xffeef4ff, MUTED=0xff97a9c4;
+ 
+   @Override public void onCreate(Bundle state) {
+@@ -263,6 +265,8 @@
+   }
+   private void requestPassphrase() {
+     if(selectedChatId==0) { showStatus("Сначала выбери переписку."); return; }
++    if(exporting || pendingPassphrase!=null) { showStatus("Выбор места сохранения уже выполняется."); return; }
++    final long dialogChatId=selectedChatId;
+     LinearLayout fields = new LinearLayout(this); fields.setPadding(dp(20),0,dp(20),0); fields.setOrientation(LinearLayout.VERTICAL);
+     EditText p1=new EditText(this), p2=new EditText(this);
+     for(EditText field : new EditText[]{p1,p2}) {
+@@ -280,7 +284,15 @@
+         boolean valid=a.length>=14 && a.length<=256 && Arrays.equals(a,b);
+         Arrays.fill(b,'\0');
+         if(!valid) { Arrays.fill(a,'\0'); showStatus("Пароль не совпадает или не укладывается в 14–256 символов. Повтори попытку.");return;}
+-        // No password ever goes into a Bundle or saved instance state.
++        // Selection may have changed while the password dialog was open.
++        // Never silently switch which private chat will be exported.
++        if(dialogChatId!=selectedChatId || exporting || pendingPassphrase!=null) {
++          Arrays.fill(a,'\0');
++          showStatus("Выбранный чат изменился. Укажи пароль и место сохранения заново.");
++          return;
++        }
++        // No password or pending chat choice goes into savedInstanceState.
++        pendingChatId=dialogChatId;
+         pendingPassphrase = a;
+         Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+         intent.addCategory(Intent.CATEGORY_OPENABLE);
+@@ -288,7 +300,7 @@
+         intent.putExtra(Intent.EXTRA_TITLE,"Vault_"+System.currentTimeMillis()+".tva");
+         try {startActivityForResult(intent,CREATE_ARCHIVE);}
+         catch(RuntimeException pickerFailure) {
+-          Arrays.fill(a,'\0');pendingPassphrase=null;
++          Arrays.fill(a,'\0');pendingPassphrase=null;pendingChatId=0;
+           showStatus("Не удалось открыть локальное сохранение. Повтори выбор места и пароля.");
+         }
+       }).show();
+@@ -298,15 +310,15 @@
+     if(request != CREATE_ARCHIVE) return;
+     if(result!=RESULT_OK || data==null || data.getData()==null) {
+       if(pendingPassphrase!=null)Arrays.fill(pendingPassphrase,'\0');
+-      pendingPassphrase=null;return;
++      pendingPassphrase=null;pendingChatId=0;return;
+     }
+     Uri destination=data.getData();
+     // Android can recreate/kill our Activity while the document picker is open.
+     // The password is intentionally NOT persisted in savedInstanceState. If it
+     // vanished, reject the placeholder rather than launch with a null password.
+-    if (pendingPassphrase == null || selectedChatId == 0 || exporting) {
++    if (pendingPassphrase == null || pendingChatId == 0 || selectedChatId != pendingChatId || exporting) {
+       if (pendingPassphrase != null) Arrays.fill(pendingPassphrase,'\0');
+-      pendingPassphrase=null;
++      pendingPassphrase=null;pendingChatId=0;
+       try {getContentResolver().delete(destination,null,null);}catch(Exception ignored){}
+       showStatus("Экспорт не начался: Android восстановил приложение без пароля или выбора чата. Выбери чат и пароль ещё раз.");
+       return;
+@@ -317,12 +329,14 @@
+         !"com.android.providers.downloads.documents".equals(provider) &&
+         !"com.android.providers.media.documents".equals(provider)) {
+       if (pendingPassphrase!=null) Arrays.fill(pendingPassphrase,'\0');
+-      pendingPassphrase=null;
++      pendingPassphrase=null;pendingChatId=0;
++      try {getContentResolver().delete(destination,null,null);}catch(Exception ignored){}
+       showStatus("Выбери локальную память телефона. Облачные диски не принимаются. Проверь также настройки автоматических копий на устройстве.");
+       return;
+     }
+     char[] password=pendingPassphrase; pendingPassphrase=null;
+-    final long exportChatId=selectedChatId; // Freeze chat identity for the entire export.
++    final long exportChatId=pendingChatId; // Identity is frozen before opening the picker.
++    pendingChatId=0;
+     exporting=true;
+     clearUi(); message("Экспорт выполняется. Держи приложение открытым. Если связь прервётся, снова выбери тот же чат и нажми «Скачать всё / продолжить экспорт» — сохранённые зашифрованные данные останутся на телефоне.");
+     showStatus("Создаём зашифрованный архив…");
+@@ -369,8 +383,9 @@
+     });
+   }
+   private void confirmResetProgress() {
+-    if(exporting)return;
++    if(exporting || pendingPassphrase!=null)return;
+     if(selectedChatId==0){showStatus("Сначала выбери чат.");return;}
++    final long resetChatId=selectedChatId; // Freeze the target before queueing the worker.
+     new AlertDialog.Builder(this).setTitle("Удалить незавершённую загрузку?")
+       .setMessage("Временные зашифрованные сообщения и медиа выбранного чата будут удалены. Сохранённые .tva архивы не затрагиваются. Для нового экспорта придётся скачать всё заново.")
+       .setNegativeButton("Отмена",null).setPositiveButton("Удалить прогресс",(dialog,index)->{
+@@ -378,7 +393,7 @@
+           byte[] secret=null;
+           try{
+             secret=new SessionSecrets(this).getOrCreate();
+-            try(ResumeStore store=new ResumeStore(new File(getFilesDir(),"export-progress"),selectedChatId,secret)){
++            try(ResumeStore store=new ResumeStore(new File(getFilesDir(),"export-progress"),resetChatId,secret)){
+               store.erase();
+             }
+             showStatus("Промежуточные данные удалены. Можно начать новый экспорт.");
+@@ -427,6 +442,7 @@
+   @Override protected void onDestroy() {
+     // Abandoning the picker must not retain the vault password in the Activity.
+     if(pendingPassphrase!=null){Arrays.fill(pendingPassphrase,'\0');pendingPassphrase=null;}
++    pendingChatId=0;
+     if(td!=null) td.stop();
+     worker.shutdownNow();
+     super.onDestroy();
+--- a/app/src/main/java/org/vault/exporter/ResumeStore.java
++++ b/app/src/main/java/org/vault/exporter/ResumeStore.java
+@@ -2,6 +2,10 @@
+ 
+ import java.io.*;
+ import java.nio.file.Files;
++import java.nio.channels.FileLock;
++import java.nio.channels.OverlappingFileLockException;
++import java.util.Set;
++import java.util.concurrent.ConcurrentHashMap;
+ import java.nio.file.StandardCopyOption;
+ import java.nio.charset.StandardCharsets;
+ import java.security.MessageDigest;
+@@ -27,6 +31,14 @@
+   private final File root;
+   private final byte[] key;
+   private final long chatId;
++  // An OS-backed lock prevents two Android Activity/process instances from
++  // writing the same per-chat checkpoint concurrently. Keep it OUTSIDE the
++  // erasable chat directory so erase() cannot bypass an active lock.
++  private static final Set<String> JVM_LOCKS=ConcurrentHashMap.newKeySet();
++  private final String localLockKey;
++  private boolean closed;
++  private final RandomAccessFile lockFile;
++  private final FileLock exclusiveLock;
+   public static final class State {
+     public final long chatId, cursor;
+     public final int pages, messages, media;
+@@ -43,11 +55,42 @@
+   public ResumeStore(File privateDir, long chatId, byte[] sessionSecret) throws Exception {
+     if (chatId == 0 || sessionSecret == null || sessionSecret.length != 32) throw new IllegalArgumentException("Неправильный ключ или чат");
+     this.chatId=chatId;
+-    this.root = new File(privateDir,"chat-"+chatId).getCanonicalFile();
+-    if (!root.isDirectory() && !root.mkdirs()) throw new IOException("Не удалось создать закрытый каталог");
+-    Mac mac = Mac.getInstance("HmacSHA256");
+-    mac.init(new SecretKeySpec(sessionSecret,"HmacSHA256"));
+-    this.key=mac.doFinal(("TelegramVault resume store v1|"+chatId).getBytes(StandardCharsets.UTF_8));
++    File privateRoot=privateDir.getCanonicalFile();
++    if(!privateRoot.isDirectory() && !privateRoot.mkdirs())
++      throw new IOException("Не удалось создать закрытый каталог экспорта");
++    // The lock file is stable across app restarts. A leftover file does not
++    // block the next process: the kernel releases FileLock on process death.
++    File locks=new File(privateRoot,".locks");
++    if(!locks.isDirectory() && !locks.mkdirs())throw new IOException("Нет каталога блокировок");
++    File lockPath=new File(locks,"chat-"+chatId+".lock").getCanonicalFile();
++    String lockKey=lockPath.getPath();
++    // POSIX fcntl() locks may be released when *any* FD for the same inode is
++    // closed by this process. Reject duplicate in-process writers BEFORE
++    // opening a second handle, otherwise even a failed tryLock() can weaken
++    // the original process's cross-process exclusion on some systems.
++    if(!JVM_LOCKS.add(lockKey))throw new IOException("Экспорт этого чата уже выполняется");
++    RandomAccessFile handle=null;
++    FileLock held=null;
++    try {
++      handle=new RandomAccessFile(lockPath,"rw");
++      try {held=handle.getChannel().tryLock();}
++      catch(OverlappingFileLockException busy){throw new IOException("Экспорт этого чата уже выполняется",busy);}
++      if(held==null)throw new IOException("Экспорт этого чата уже выполняется");
++      this.root = new File(privateRoot,"chat-"+chatId).getCanonicalFile();
++      if (!root.isDirectory() && !root.mkdirs())
++        throw new IOException("Не удалось создать закрытый каталог");
++      Mac mac = Mac.getInstance("HmacSHA256");
++      mac.init(new SecretKeySpec(sessionSecret,"HmacSHA256"));
++      this.key=mac.doFinal(("TelegramVault resume store v1|"+chatId).getBytes(StandardCharsets.UTF_8));
++    } catch(Exception e) {
++      if(held!=null)try{held.release();}catch(IOException ignored){}
++      if(handle!=null)try{handle.close();}catch(IOException ignored){}
++      JVM_LOCKS.remove(lockKey);
++      throw e;
++    }
++    this.localLockKey=lockKey;
++    this.lockFile=handle;
++    this.exclusiveLock=held;
+   }
+   public State state() throws Exception {
+     File state = path("checkpoint.enc");
+@@ -161,5 +204,12 @@
+     if(list!=null) for(File f:list) {if(f.isDirectory())ok &=deleteChildren(f); else ok &=f.delete();}
+     return dir.delete() && ok;
+   }
+-  @Override public void close() { Arrays.fill(key,(byte)0); }
++  @Override public synchronized void close() {
++    if(closed)return;
++    closed=true;
++    Arrays.fill(key,(byte)0);
++    try{exclusiveLock.release();}catch(IOException ignored){}
++    try{lockFile.close();}catch(IOException ignored){}
++    JVM_LOCKS.remove(localLockKey);
++  }
+ }
+--- /dev/null
++++ b/tests/HoldResumeLockChild.java
+@@ -0,0 +1,15 @@
++import org.vault.exporter.ResumeStore;
++import java.io.*;
++import java.nio.file.*;
++
++/** Independent process: hold a resumable checkpoint, then await forced termination. */
++public final class HoldResumeLockChild {
++  public static void main(String[] args) throws Exception {
++    File directory=new File(args[0]);
++    try(ResumeStore store=new ResumeStore(directory,888,new byte[32])) {
++      store.checkpoint(new ResumeStore.State(888,0,0,0,0,false));
++      Files.write(new File(directory,"child-ready.flag").toPath(),new byte[]{1});
++      Thread.sleep(60000L);
++    }
++  }
++}
+--- /dev/null
++++ b/tests/RUN_ACTIVITY_SELECTION_SAFETY_TESTS.py
+@@ -0,0 +1,42 @@
++#!/usr/bin/env python3
++"""Source-level regression contracts for Android picker/worker races.
++
++This cannot replace Android instrumentation or runtime lifecycle testing.
++"""
++from pathlib import Path
++import re
++
++source = (Path(__file__).resolve().parents[1] /
++          'app/src/main/java/org/vault/exporter/MainActivity.java').read_text()
++
++def section(first: str, next_one: str):
++    start = source.index(first)
++    end = source.index(next_one, start + len(first))
++    return source[start:end]
++
++picker = section('private void requestPassphrase()', '@Override protected void onActivityResult')
++result = section('@Override protected void onActivityResult', 'private void confirmResetProgress()')
++reset = section('private void confirmResetProgress()', 'private void confirmLogout()')
++finish = section('@Override protected void onDestroy()', '\n}')
++
++checks = {
++    'Chat ID captured before opening picker': 'final long dialogChatId=selectedChatId;' in picker,
++    'Second picker blocked while pending': 'exporting || pendingPassphrase!=null' in picker,
++    'Chat changes during password dialog fail closed': 'dialogChatId!=selectedChatId' in picker,
++    'Pending choice tied to dialog snapshot': 'pendingChatId=dialogChatId;' in picker,
++    'Picker restoration cannot use absent password': 'pendingPassphrase == null' in result,
++    'Picker restoration cannot use absent chat ID': 'pendingChatId == 0' in result,
++    'Picker cannot export a newly selected chat': 'selectedChatId != pendingChatId' in result,
++    'Actual export freezes original picker chat': 'final long exportChatId=pendingChatId;' in result,
++    'Picker identity cleared when export begins': re.search(r'final long exportChatId=pendingChatId;.*?pendingChatId=0;', result, re.S) is not None,
++    'Untrusted document provider placeholder deleted': re.search(r'provider=destination\.getAuthority\(\).*?pendingChatId=0;.*?getContentResolver\(\)\.delete\(destination', result, re.S) is not None,
++    'Reset prohibited during active/pending export': 'exporting || pendingPassphrase!=null' in reset,
++    'Reset captures target before asynchronous execution': 'final long resetChatId=selectedChatId;' in reset,
++    'Reset worker uses frozen target rather than mutable UI state': '"export-progress"),resetChatId,secret)' in reset and '"export-progress"),selectedChatId,secret)' not in reset,
++    'No picker password persisted in Bundle': 'savedInstanceState.put' not in picker and 'savedInstanceState.put' not in result,
++    'Activity destruction clears pending chat/password': 'pendingChatId=0;' in finish and "Arrays.fill(pendingPassphrase,'\\0')" in finish,
++}
++for name, passed in checks.items():
++    if not passed:
++        raise AssertionError('FAIL: ' + name)
++print('PASS:', len(checks), 'static Android selection/picker/worker lifecycle safety contracts')
+--- a/tests/RUN_BUILD_SAFETY_TESTS.py
++++ b/tests/RUN_BUILD_SAFETY_TESTS.py
+@@ -69,8 +69,10 @@
+ # Activity recreation while ACTION_CREATE_DOCUMENT is open cannot preserve
+ # passwords in Bundles. Reject a provider result without an in-memory secret.
+ activity=(ROOT/'app/src/main/java/org/vault/exporter/MainActivity.java').read_text()
+-assert 'if (pendingPassphrase == null || selectedChatId == 0 || exporting)' in activity
+-assert 'final long exportChatId=selectedChatId;' in activity
++assert 'if (pendingPassphrase == null || pendingChatId == 0 || selectedChatId != pendingChatId || exporting)' in activity
++assert 'final long exportChatId=pendingChatId;' in activity
+ assert 'export(exportChatId,out,password)' in activity
+ assert 'Arrays.fill(pendingPassphrase' in activity
++assert 'final long resetChatId=selectedChatId;' in activity
++assert '"export-progress"),resetChatId,secret)' in activity
+ print('PASS: pinned arm64-only TDLib build gate, ELF ABI negative fixtures, picker password-loss safety')
+--- a/tests/RUN_TESTS_OFFLINE.sh
++++ b/tests/RUN_TESTS_OFFLINE.sh
+@@ -5,10 +5,12 @@
+ ROOT=app/src/main/java/org/vault/exporter
+ javac -d build/test-classes \
+   "$ROOT"/{HistoryCursor,StagingCipher,ChunkedVault,ResumeStore,ArchiveWriter,ArchiveVerifier,TelegramRateLimit}.java \
+-  tests/{RunCryptoTests,RunResumeTests,RunPipelineTests,RunRateLimitTests,RunStagingV2HardeningTests,RunHistoryCursorHardeningTests,RunStagingBoundedMemoryTest,RunSemanticArchiveVerifierTests,RunVerifierBoundedMemoryTest}.java
+-for cls in RunCryptoTests RunResumeTests RunPipelineTests RunRateLimitTests RunStagingV2HardeningTests RunHistoryCursorHardeningTests RunSemanticArchiveVerifierTests; do
++  tests/{RunCryptoTests,RunResumeTests,RunPipelineTests,RunRateLimitTests,RunStagingV2HardeningTests,RunHistoryCursorHardeningTests,RunStagingBoundedMemoryTest,RunSemanticArchiveVerifierTests,RunVerifierBoundedMemoryTest,RunExclusiveResumeLockTests,TryResumeLockChild,HoldResumeLockChild}.java
++for cls in RunCryptoTests RunResumeTests RunPipelineTests RunRateLimitTests RunStagingV2HardeningTests RunHistoryCursorHardeningTests RunSemanticArchiveVerifierTests RunExclusiveResumeLockTests; do
+   java -Xmx64m -cp build/test-classes "$cls"
+ done
+ java -Xmx32m -cp build/test-classes RunStagingBoundedMemoryTest
+ java -Xmx32m -cp build/test-classes RunVerifierBoundedMemoryTest
+ python3 scripts/security_gate.py
++
++python3 tests/RUN_ACTIVITY_SELECTION_SAFETY_TESTS.py
+--- /dev/null
++++ b/tests/RunExclusiveResumeLockTests.java
+@@ -0,0 +1,84 @@
++import org.vault.exporter.ResumeStore;
++import java.io.*;
++import java.nio.file.*;
++import java.nio.charset.StandardCharsets;
++
++/** Functional regression: two exports must not mutate one chat at once. */
++public final class RunExclusiveResumeLockTests {
++  static void ok(boolean x,String message){if(!x)throw new AssertionError(message);}
++  static int child(File dir)throws Exception {
++    String javaExecutable=System.getProperty("java.home")+File.separator+"bin"+File.separator+"java";
++    Process p=new ProcessBuilder(javaExecutable,"-cp",System.getProperty("java.class.path"),
++      "TryResumeLockChild",dir.getAbsolutePath()).redirectErrorStream(true).start();
++    if(!p.waitFor(15,java.util.concurrent.TimeUnit.SECONDS)){
++      p.destroyForcibly();throw new AssertionError("Cross-process lock check hung");
++    }
++    String output=new String(p.getInputStream().readAllBytes(),StandardCharsets.UTF_8);
++    if(p.exitValue()!=0 && p.exitValue()!=42)
++      throw new AssertionError("Unexpected child failure: "+output);
++    return p.exitValue();
++  }
++  public static void main(String[] args)throws Exception {
++    File base=Files.createTempDirectory("vault-exclusive-export-").toFile();
++    byte[] secret=new byte[32];
++    // Two different chat IDs may be independently staged.
++    try(ResumeStore a=new ResumeStore(base,123,secret);
++        ResumeStore b=new ResumeStore(base,456,secret)){
++      a.putPage(1,"hello\n".getBytes("UTF-8"),new byte[0]);
++      boolean rejected=false;
++      try(ResumeStore impossible=new ResumeStore(base,123,secret)){}
++      catch(IOException expected){rejected=expected.getMessage().contains("уже выполняется");}
++      ok(rejected,"Second writer must be rejected for the same chat");
++      // Deleting the chat staging directory must not release or bypass the lock.
++      a.erase();
++      rejected=false;
++      try(ResumeStore impossible=new ResumeStore(base,123,secret)){}
++      catch(IOException expected){rejected=true;}
++      ok(rejected,"Erase must not bypass exclusive lock");
++      ok(child(base)==42,"Second process must be denied while lock held");
++      ok(b.state().chatId==456,"Other chat must remain independent");
++    }
++    // Stale lock files after process death/restart must not block new attempts.
++    ok(child(base)==0,"Independent process must acquire after prior owner exits");
++    try(ResumeStore recovered=new ResumeStore(base,123,secret)) {
++      ok(recovered.state().chatId==123,"Released lock must permit resume");
++      recovered.checkpoint(new ResumeStore.State(123,0,0,0,0,false));
++    }
++    // A late duplicate close of an already released store must never remove a
++    // newer session's local reservation for the same lock file.
++    ResumeStore old=new ResumeStore(base,123,secret);
++    old.close();
++    try(ResumeStore current=new ResumeStore(base,123,secret)) {
++      old.close();
++      boolean blocked=false;
++      try(ResumeStore duplicate=new ResumeStore(base,123,secret)){}
++      catch(IOException e){blocked=true;}
++      ok(blocked,"Double close must not remove a newer owner's reservation");
++      ok(child(base)==42,"New owner's cross-process lock must remain valid");
++    }
++    // Simulate a force-killed Android-style process: kernel must release the
++    // native lock and the last completed encrypted checkpoint must survive.
++    String javaExe=System.getProperty("java.home")+File.separator+"bin"+File.separator+"java";
++    Process victim=new ProcessBuilder(javaExe,"-cp",System.getProperty("java.class.path"),
++      "HoldResumeLockChild",base.getAbsolutePath()).redirectErrorStream(true).start();
++    File flag=new File(base,"child-ready.flag");
++    long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
++    while(!flag.exists() && victim.isAlive() && System.nanoTime()<deadline)
++      Thread.sleep(25);
++    boolean acquired=flag.exists();
++    if(!acquired) { victim.destroyForcibly();throw new AssertionError("Child never acquired crash-test lock"); }
++    // Reject a second exporter while victim is alive.
++    boolean denied=false;
++    try(ResumeStore wrong=new ResumeStore(base,888,secret)){}
++    catch(IOException expected){denied=true;}
++    ok(denied,"Crash-test lock must exclude the parent before process death");
++    victim.destroyForcibly();
++    ok(victim.waitFor(10,java.util.concurrent.TimeUnit.SECONDS),"Timed out killing child");
++    try(ResumeStore recovery=new ResumeStore(base,888,secret)){
++      ok(recovery.state().chatId==888,"Checkpoint unreadable after force-kill");
++      ok(!recovery.state().historyFinished,"Incomplete checkpoint must remain incomplete");
++    }
++    flag.delete();
++    System.out.println("PASS: per-chat lock, cross-process exclusion, crash recovery after SIGKILL, reopening and double-close safety");
++  }
++}
+--- /dev/null
++++ b/tests/TryResumeLockChild.java
+@@ -0,0 +1,14 @@
++import org.vault.exporter.ResumeStore;
++import java.io.*;
++
++/** Separate process fixture to verify that locks work across JVM processes. */
++public final class TryResumeLockChild {
++  public static void main(String[] args) throws Exception {
++    try(ResumeStore ignored=new ResumeStore(new File(args[0]),123,new byte[32])) {
++      System.out.println("LOCK_ACQUIRED");
++    } catch(IOException expected) {
++      System.out.println("LOCK_DENIED");
++      System.exit(42);
++    }
++  }
++}
