@@ -36,10 +36,10 @@ public final class MainActivity extends Activity {
 
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
-    // Real-account builds contain private chats and retain Android screenshot protection.
-    // Debug builds are intentionally offline and contain no Telegram account data;
-    // permit screenshots/screen recording so users can report UI issues.
-    if (!BuildConfig.DEBUG)
+    // Screenshot/recording is allowed ONLY for isolated test-DC debug demo.
+    // Keep privacy protection for production and all release APKs, including debug production.
+    // Debug APK has INTERNET permission removed via app/src/debug/AndroidManifest.xml.
+    if (!(BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC))
       getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
     getWindow().setStatusBarColor(BACKGROUND); getWindow().setNavigationBarColor(BACKGROUND);
     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
