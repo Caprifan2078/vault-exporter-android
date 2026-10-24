@@ -61,6 +61,8 @@ public final class MainActivity extends Activity {
       message("ВНИМАНИЕ: эта сборка подключается к настоящему Telegram. Риск ограничений стороннего API-клиента нельзя исключить.");
     }
     button("Посмотреть, как работает экспорт (офлайн)", this::showOfflineDemo);
+    if (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)
+      button("Проверить нативную TDLib (офлайн)", this::probeNativeTdlibOffline);
     button(BuildConfig.TELEGRAM_TEST_DC ? "Подключить тестовый Telegram" : "Подключить настоящий Telegram", this::askBeforeConnect);
     message("Экспорт не запускается автоматически. Не требуется удалять или отключать основной Telegram.");
   }
@@ -69,6 +71,31 @@ public final class MainActivity extends Activity {
       .setTitle("Офлайн-демонстрация")
       .setMessage("1. Авторизация в отдельном сеансе\n2. Выбор облачной переписки\n3. Скачивание поддерживаемых вложений, даже без кэша\n4. Шифрование локального архива\n5. Проверка целостности и предложение выхода\n\nЭто только демонстрация шагов. Соединение с Telegram не выполняется.")
       .setPositiveButton("Понятно", null).show();
+  }
+  /**
+   * Debug/test-DC only: verify JNI dynamic linking and basic official TDLib C API.
+   * Deliberately never sends setTdlibParameters, credentials or any network request.
+   * The emulator CI also disables all radios before using this control.
+   */
+  private void probeNativeTdlibOffline() {
+    if (!BuildConfig.DEBUG || !BuildConfig.TELEGRAM_TEST_DC || td != null || exporting) {
+      showStatus("Офлайн-диагностика недоступна в текущем режиме.");
+      return;
+    }
+    showStatus("Проверяем загрузку нативной TDLib без авторизации…");
+    worker.execute(() -> {
+      try {
+        long clientId = TdNative.createClient();
+        if (clientId <= 0) throw new IllegalStateException("TDLib client creation returned zero");
+        // Closing a new client does not authorize it or initialize an account.
+        TdNative.send(clientId, "{\"@type\":\"close\"}");
+        TdNative.receive(0.25);
+        showStatus("TDLIB_OFFLINE_PROBE_PASS: JNI, клиент и close; без входа.");
+      } catch (Throwable ignored) {
+        // Keep exception content out of UI: native failure details may be unsafe.
+        showStatus("TDLIB_OFFLINE_PROBE_FAIL: ошибка загрузки JNI или вызова TDLib.");
+      }
+    });
   }
   private void askBeforeConnect() {
     if (td != null) { showStatus("Подключение уже началось."); return; }
