@@ -64,13 +64,13 @@ jobs:
           ORG_GRADLE_PROJECT_telegramApiHash: ${{ secrets.TELEGRAM_API_HASH }}
         run: |
           set -euo pipefail
-          gradle --no-daemon -PtelegramEnvironment=test :app:assembleTestDc
-          APK=app/build/outputs/apk/testDc/app-testDc.apk
+          gradle --no-daemon -PtelegramEnvironment=test :app:assembleSandboxDc
+          APK=app/build/outputs/apk/sandboxDc/app-sandboxDc.apk
           test -s "$APK"
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
           "$AAPT" dump badging "$APK" | grep -F "package: name='org.vault.exporter.sandbox.testnet'"
           "$AAPT" dump permissions "$APK" | grep -F 'android.permission.INTERNET'
-          BCONFIG=app/build/generated/source/buildConfig/testDc/org/vault/exporter/BuildConfig.java
+          BCONFIG=app/build/generated/source/buildConfig/sandboxDc/org/vault/exporter/BuildConfig.java
           test -s "$BCONFIG"
           grep -F 'TELEGRAM_TEST_DC = true' "$BCONFIG"
           grep -F 'ALLOW_PRODUCTION = false' "$BCONFIG"
@@ -82,7 +82,7 @@ jobs:
         with:
           name: ISOLATED-TEST-DC-NETWORK-APK-NOT-FOR-PRIMARY-ACCOUNT
           path: |
-            app/build/outputs/apk/testDc/app-testDc.apk
+            app/build/outputs/apk/sandboxDc/app-sandboxDc.apk
             TEST_DC_APK_SHA256.txt
             NOT_FOR_PRIMARY_ACCOUNT.txt
           retention-days: 1
