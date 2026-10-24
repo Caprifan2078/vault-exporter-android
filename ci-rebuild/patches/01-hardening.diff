@@ -1,0 +1,539 @@
+--- a/app/src/main/java/org/vault/exporter/ResumeStore.java
++++ b/app/src/main/java/org/vault/exporter/ResumeStore.java
+@@ -1,10 +1,10 @@
+ package org.vault.exporter;
+ 
+ import java.io.*;
+-import java.nio.ByteBuffer;
++import java.nio.file.Files;
++import java.nio.file.StandardCopyOption;
+ import java.nio.charset.StandardCharsets;
+ import java.security.MessageDigest;
+-import java.security.SecureRandom;
+ import java.util.Arrays;
+ import java.util.Locale;
+ import javax.crypto.Cipher;
+@@ -23,10 +23,10 @@
+ public final class ResumeStore implements Closeable {
+   private static final byte[] MAGIC = "TVS1".getBytes(StandardCharsets.US_ASCII);
+   private static final int MAX_PAGE_BYTES = 16 * 1024 * 1024;
++  private static final long MAX_LEGACY_TVS1_BYTES = 8L * 1024 * 1024;
+   private final File root;
+   private final byte[] key;
+   private final long chatId;
+-  private final SecureRandom random = new SecureRandom();
+   public static final class State {
+     public final long chatId, cursor;
+     public final int pages, messages, media;
+@@ -105,35 +105,42 @@
+     File dest=path(name), parent=dest.getParentFile();
+     if(!parent.isDirectory() && !parent.mkdirs()) throw new IOException("Не удалось создать папку checkpoint");
+     File temp=File.createTempFile(".pending-",".tmp",parent);
+-    byte[] nonce=new byte[12]; random.nextBytes(nonce);
++
+     MessageDigest md=MessageDigest.getInstance("SHA-256"); long size=0;
+     try(InputStream src=input; FileOutputStream file=new FileOutputStream(temp)) {
+-      file.write(MAGIC);file.write(nonce);
+-      Cipher aes=Cipher.getInstance("AES/GCM/NoPadding");
+-      aes.init(Cipher.ENCRYPT_MODE,new SecretKeySpec(key,"AES"),new GCMParameterSpec(128,nonce));
+-      aes.updateAAD(aad(name));
+-      // Do not close CipherOutputStream separately: it would close the underlying FileOutputStream.
+-      CipherOutputStream enc=new CipherOutputStream(file,aes);
+-      byte[] buf=new byte[65536];int n;
+-      while((n=src.read(buf))!=-1) {enc.write(buf,0,n);md.update(buf,0,n);size+=n;}
+-      enc.flush();enc.close(); // emits the authentication tag
++      try(OutputStream enc=StagingCipher.encrypt(file,key,chatId,name)) {
++        byte[] buf=new byte[65536];int n;
++        while((n=src.read(buf))!=-1) {enc.write(buf,0,n);md.update(buf,0,n);size+=n;}
++      }
+       try(FileOutputStream fsync=new FileOutputStream(temp,true)) {fsync.getFD().sync();}
+-      if(!temp.renameTo(dest)) throw new IOException("Не удалось сохранить контрольную точку");
++      Files.move(temp.toPath(),dest.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+     } catch(Exception e) {temp.delete(); throw e;}
+     return new Media(hex(md.digest()),size);
+   }
+   private InputStream open(String name) throws Exception {
+-    FileInputStream file=new FileInputStream(path(name));
++    File source=path(name);
++    FileInputStream file=new FileInputStream(source);
+     try {
+-      byte[] magic=new byte[4]; if(file.read(magic)!=4 || !Arrays.equals(magic,MAGIC)) throw new IOException("Неверный формат staging");
+-      byte[] nonce=new byte[12]; int off=0,n;
+-      while(off<nonce.length && (n=file.read(nonce,off,nonce.length-off))!=-1) off+=n;
+-      if(off<12) throw new EOFException("Обрезанный файл staging");
+-      Cipher aes=Cipher.getInstance("AES/GCM/NoPadding");
+-      aes.init(Cipher.DECRYPT_MODE,new SecretKeySpec(key,"AES"),new GCMParameterSpec(128,nonce));
+-      aes.updateAAD(aad(name));
+-      return new CipherInputStream(file,aes);
+-    } catch(Exception e) {file.close();throw e;}
++      byte[] magic=new byte[4];
++      if(file.read(magic)!=4)throw new EOFException("Обрезанный staging-файл");
++      file.close();
++      if(Arrays.equals(magic,"TVS2".getBytes(StandardCharsets.US_ASCII)))
++        return StagingCipher.decrypt(new FileInputStream(source),key,chatId,name);
++      if(!Arrays.equals(magic,MAGIC))throw new IOException("Неизвестный формат staging");
++      // Legacy TVS1 used whole-file GCM with CipherInputStream, which can allocate
++      // memory proportional to media size. Fail closed rather than OOM on large old files.
++      if(source.length()>MAX_LEGACY_TVS1_BYTES)
++        throw new IOException("Старый staging TVS1 слишком велик для безопасного чтения; сбрось прогресс и загрузи заново");
++      FileInputStream legacy=new FileInputStream(source);
++      try {
++        byte[] ignored=new byte[4];legacy.read(ignored);
++        byte[] nonce=new byte[12];new DataInputStream(legacy).readFully(nonce);
++        Cipher aes=Cipher.getInstance("AES/GCM/NoPadding");
++        aes.init(Cipher.DECRYPT_MODE,new SecretKeySpec(key,"AES"),new GCMParameterSpec(128,nonce));
++        aes.updateAAD(aad(name));
++        return new CipherInputStream(legacy,aes);
++      } catch(Exception e) {legacy.close();throw e;}
++    } catch(Exception e) {try{file.close();}catch(IOException ignored){}throw e;}
+   }
+   private Media fingerprint(String name) throws Exception {
+     MessageDigest digest=MessageDigest.getInstance("SHA-256");long size=0;
+--- a/app/src/main/java/org/vault/exporter/StagingCipher.java
++++ b/app/src/main/java/org/vault/exporter/StagingCipher.java
+@@ -0,0 +1,121 @@
++package org.vault.exporter;
++
++import java.io.*;
++import java.nio.ByteBuffer;
++import java.nio.charset.StandardCharsets;
++import java.security.SecureRandom;
++import java.util.Arrays;
++import javax.crypto.Cipher;
++import javax.crypto.spec.GCMParameterSpec;
++import javax.crypto.spec.SecretKeySpec;
++
++/** TVS2: authenticated fixed-size streaming staging with a mandatory authenticated end marker.
++ * Do not use CipherInputStream(AES/GCM) over an entire media file: some providers buffer it all.
++ */
++final class StagingCipher {
++  private static final byte[] MAGIC="TVS2".getBytes(StandardCharsets.US_ASCII);
++  private static final int BLOCK=256*1024;
++  private StagingCipher() {}
++
++  private static byte[] nonce(byte[] prefix, int seq) {
++    return ByteBuffer.allocate(12).put(prefix).putInt(seq).array();
++  }
++  private static byte[] aad(byte[] name, int seq, boolean terminal) {
++    return ByteBuffer.allocate(name.length+5).put(name).putInt(seq).put((byte)(terminal?1:0)).array();
++  }
++  private static byte[] crypt(int mode,byte[] data,byte[] key,byte[] nonce,byte[] aad) throws Exception {
++    Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
++    cipher.init(mode,new SecretKeySpec(key,"AES"),new GCMParameterSpec(128,nonce));
++    cipher.updateAAD(aad);
++    return cipher.doFinal(data);
++  }
++  private static byte[] context(long chatId,String path) {
++    return ("TVS2|"+chatId+"|"+path).getBytes(StandardCharsets.UTF_8);
++  }
++  static OutputStream encrypt(OutputStream target,byte[] key,long chatId,String path) throws IOException {
++    return new Writer(target,key,context(chatId,path));
++  }
++  static InputStream decrypt(InputStream source,byte[] key,long chatId,String path) throws IOException {
++    return new Reader(source,key,context(chatId,path));
++  }
++  private static final class Writer extends OutputStream {
++    private final DataOutputStream out;
++    private final byte[] key, context, prefix=new byte[8], block=new byte[BLOCK];
++    private int filled,seq;
++    private boolean closed;
++    Writer(OutputStream stream,byte[] key,byte[] context) throws IOException {
++      this.out=new DataOutputStream(stream);this.key=key.clone();this.context=context;
++      new SecureRandom().nextBytes(prefix);out.write(MAGIC);out.write(prefix);
++    }
++    private void checkOpen() throws IOException {if(closed)throw new IOException("Staging writer closed");}
++    @Override public void write(int n) throws IOException {
++      checkOpen();block[filled++]=(byte)n;if(filled==BLOCK)send(false);
++    }
++    @Override public void write(byte[] b,int off,int len) throws IOException {
++      checkOpen();if(off<0||len<0||off>b.length-len)throw new IndexOutOfBoundsException();
++      while(len>0){int n=Math.min(len,BLOCK-filled);System.arraycopy(b,off,block,filled,n);
++        off+=n;len-=n;filled+=n;if(filled==BLOCK)send(false);}
++    }
++    private void send(boolean terminal) throws IOException {
++      if(seq==Integer.MAX_VALUE)throw new IOException("Staging exceeds sequence limit");
++      int n=terminal?0:filled;
++      try {
++        byte[] crypted=crypt(Cipher.ENCRYPT_MODE,Arrays.copyOf(block,n),key,
++           nonce(prefix,seq),aad(context,seq,terminal));
++        out.writeInt(n);out.write(crypted);seq++;filled=0;
++      }catch(Exception ex){throw new IOException("Staging encryption failed",ex);}
++    }
++    @Override public void flush() throws IOException {out.flush();}
++    @Override public void close() throws IOException {
++      if(closed)return;closed=true;
++      try {if(filled>0)send(false);send(true);out.flush();}
++      finally {Arrays.fill(key,(byte)0);Arrays.fill(block,(byte)0);out.close();}
++    }
++  }
++  private static final class Reader extends InputStream {
++    private final DataInputStream in;
++    private final byte[] key,context,prefix=new byte[8];
++    private byte[] plain=new byte[0];
++    private int offset,seq;
++    private boolean ended,closed;
++    Reader(InputStream source,byte[] key,byte[] context) throws IOException {
++      this.in=new DataInputStream(source);this.key=key.clone();this.context=context;
++      try {byte[] header=new byte[4];in.readFully(header);
++        if(!Arrays.equals(header,MAGIC))throw new IOException("Wrong TVS2 marker");
++        in.readFully(prefix);
++      }catch(IOException ex){in.close();throw ex;}
++    }
++    private boolean next() throws IOException {
++      if(ended)return false;
++      if(seq==Integer.MAX_VALUE)throw new IOException("Staging sequence overflow");
++      int n;
++      try{n=in.readInt();}catch(EOFException ex){throw new EOFException("Missing authenticated TVS2 end marker");}
++      if(n<0||n>BLOCK)throw new IOException("Invalid TVS2 block length");
++      byte[] ciphertext=new byte[n+16];in.readFully(ciphertext);
++      boolean terminal=n==0;
++      try {plain=crypt(Cipher.DECRYPT_MODE,ciphertext,key,nonce(prefix,seq),aad(context,seq,terminal));}
++      catch(Exception ex){throw new IOException("TVS2 authentication failed",ex);}
++      seq++;offset=0;
++      if(terminal){ended=true;if(in.read()!=-1)throw new IOException("Extra bytes after TVS2 end marker");return false;}
++      if(plain.length!=n)throw new IOException("TVS2 payload length mismatch");
++      return true;
++    }
++    @Override public int read() throws IOException {
++      if(closed)throw new IOException("Staging reader closed");
++      if(offset>=plain.length&&!next())return -1;
++      return plain[offset++]&255;
++    }
++    @Override public int read(byte[] b,int off,int len) throws IOException {
++      if(off<0||len<0||off>b.length-len)throw new IndexOutOfBoundsException();
++      if(closed)throw new IOException("Staging reader closed");
++      if(len==0)return 0;
++      if(offset>=plain.length&&!next())return -1;
++      int take=Math.min(len,plain.length-offset);System.arraycopy(plain,offset,b,off,take);offset+=take;
++      return take;
++    }
++    @Override public void close() throws IOException {
++      if(closed)return;closed=true;
++      Arrays.fill(key,(byte)0);Arrays.fill(plain,(byte)0);in.close();
++    }
++  }
++}
+--- a/app/src/main/java/org/vault/exporter/HistoryCursor.java
++++ b/app/src/main/java/org/vault/exporter/HistoryCursor.java
+@@ -0,0 +1,34 @@
++package org.vault.exporter;
++import java.io.IOException;
++import java.util.Arrays;
++/** Validates TDLib descending history pages; short pages are not EOF. */
++public final class HistoryCursor {
++  private HistoryCursor() {}
++  public static final class Selection {
++    public final int[] indices;
++    public final long nextCursor;
++    public final boolean emptyResponse, stalled;
++    private Selection(int[] indices,long nextCursor,boolean emptyResponse,boolean stalled){
++      this.indices=indices;this.nextCursor=nextCursor;
++      this.emptyResponse=emptyResponse;this.stalled=stalled;
++    }
++  }
++  public static Selection select(long savedCursor,long[] responseIds)throws IOException{
++    if(savedCursor<0 || responseIds==null || responseIds.length>100)
++      throw new IOException("Недопустимая страница TDLib");
++    long previous=Long.MAX_VALUE;
++    int[] accepted=new int[responseIds.length];int count=0;
++    long lowest=Long.MAX_VALUE;
++    for(int i=0;i<responseIds.length;i++){
++      long id=responseIds[i];
++      if(id<=0 || id>=previous)
++        throw new IOException("TDLib вернула некорректный порядок или ID сообщений");
++      previous=id;
++      if(savedCursor>0 && id>=savedCursor)continue;
++      accepted[count++]=i;
++      lowest=Math.min(lowest,id);
++    }
++    return new Selection(Arrays.copyOf(accepted,count),
++      count>0?lowest:savedCursor,responseIds.length==0,responseIds.length>0&&count==0);
++  }
++}
+--- a/app/src/main/java/org/vault/exporter/ExportEngine.java
++++ b/app/src/main/java/org/vault/exporter/ExportEngine.java
+@@ -149,19 +149,22 @@
+       ResumeStore.State s=stage.state();
+       if(s.pages>0)progress.show("Продолжаем: уже сохранено сообщений: "+s.messages+", файлов: "+s.media);
+       while(!s.historyFinished) {
+-        // Cursor-1 prevents re-fetching the last saved message on small TDLib pages.
+-        long nextFrom=s.cursor<=1?0:s.cursor-1;
++        // TDLib requires the last received ID, not id-1 (message IDs can be sparse).
++        long nextFrom=s.cursor;
+         JSONObject history=safeRead(req("getChatHistory","chat_id",chatId)
+           .put("from_message_id",nextFrom).put("offset",0).put("limit",100).put("only_local",false),120);
+         JSONArray messages=history.optJSONArray("messages");
+         if(messages==null)throw new IOException("TDLib вернула историю в неизвестном формате");
+         ArrayList<JSONObject> page=new ArrayList<>();long oldest=Long.MAX_VALUE;
++        long[] rawIds=new long[messages.length()];
+         for(int i=0;i<messages.length();i++){
+-          JSONObject msg=messages.optJSONObject(i);if(msg==null)continue;
+-          long id=msg.optLong("id");
+-          if(id<=0 || (s.cursor!=0 && id>=s.cursor))continue;
+-          page.add(msg);oldest=Math.min(oldest,id);
+-        }
++          JSONObject msg=messages.optJSONObject(i);
++          if(msg==null)throw new IOException("TDLib вернула неполное сообщение");
++          rawIds[i]=msg.optLong("id");
++        }
++        HistoryCursor.Selection selection=HistoryCursor.select(s.cursor,rawIds);
++        for(int i:selection.indices)page.add(messages.getJSONObject(i));
++        if(!page.isEmpty())oldest=selection.nextCursor;
+         if(messages.length()==0){
+           // A second network-enabled query is required before declaring history complete.
+           // Never equate a page of already-seen IDs with the end of Telegram history.
+@@ -175,8 +178,38 @@
+           stage.checkpoint(s);
+           break;
+         }
+-        if(page.isEmpty())
+-          throw new IOException("История не продвигается: получены только уже сохранённые сообщения. Архив не объявлен полным.");
++        if(selection.stalled) {
++          // Retry a strict lower-bound query instead of incorrectly declaring EOF.
++          if(s.cursor<=1)throw new IOException("Невозможно подтвердить конец истории: некорректный курсор");
++          long probe=s.cursor-1;
++          JSONObject lower=safeRead(req("getChatHistory","chat_id",chatId)
++              .put("from_message_id",probe).put("offset",0).put("limit",100)
++              .put("only_local",false),120);
++          JSONArray candidates=lower.optJSONArray("messages");
++          if(candidates==null)throw new IOException("Неверный ответ TDLib при проверке нижней границы");
++          if(candidates.length()==0) {
++            JSONObject check=safeRead(req("getChatHistory","chat_id",chatId)
++                .put("from_message_id",probe).put("offset",0).put("limit",100)
++                .put("only_local",false),120);
++            JSONArray second=check.optJSONArray("messages");
++            if(second==null||second.length()!=0)
++              throw new IOException("Конец истории не подтверждён повторным запросом");
++            s=new ResumeStore.State(chatId,s.cursor,s.pages,s.messages,s.media,true);
++            stage.checkpoint(s);
++            break;
++          }
++          long[] candidateIds=new long[candidates.length()];
++          for(int i=0;i<candidates.length();i++){
++            JSONObject candidate=candidates.optJSONObject(i);
++            if(candidate==null)throw new IOException("Недопустимый элемент истории");
++            candidateIds[i]=candidate.optLong("id");
++          }
++          HistoryCursor.Selection lowerSelection=HistoryCursor.select(s.cursor,candidateIds);
++          if(lowerSelection.indices.length==0)
++            throw new IOException("История не продвигается: TDLib возвращает только сохранённые сообщения");
++          for(int i:lowerSelection.indices)page.add(candidates.getJSONObject(i));
++          oldest=lowerSelection.nextCursor;
++        }
+         StringBuilder line=new StringBuilder(),index=new StringBuilder();
+         int downloadedOnPage=0;
+         for(JSONObject msg:page) {
+--- a/.github/workflows/offline-security-tests.yml
++++ b/.github/workflows/offline-security-tests.yml
+@@ -26,14 +26,22 @@
+             app/src/main/java/org/vault/exporter/ArchiveWriter.java \
+             app/src/main/java/org/vault/exporter/ArchiveVerifier.java \
+             app/src/main/java/org/vault/exporter/ResumeStore.java \
++            app/src/main/java/org/vault/exporter/StagingCipher.java \
++            app/src/main/java/org/vault/exporter/HistoryCursor.java \
+             app/src/main/java/org/vault/exporter/TelegramRateLimit.java \
+             tests/RunCryptoTests.java \
+             tests/RunResumeTests.java \
+             tests/RunPipelineTests.java \
+-            tests/RunRateLimitTests.java
++            tests/RunRateLimitTests.java \
++            tests/RunStagingV2HardeningTests.java \
++            tests/RunStagingBoundedMemoryTest.java \
++            tests/RunHistoryCursorHardeningTests.java
+       - name: Check archives and resume without a Telegram account
+         run: |
+           java -cp build/test-classes RunCryptoTests
+           java -cp build/test-classes RunResumeTests
+           java -cp build/test-classes RunPipelineTests
+           java -cp build/test-classes RunRateLimitTests
++          java -Xmx64m -cp build/test-classes RunStagingV2HardeningTests
++          java -Xmx64m -cp build/test-classes RunHistoryCursorHardeningTests
++          java -Xmx32m -cp build/test-classes RunStagingBoundedMemoryTest
+--- a/tests/RunStagingV2HardeningTests.java
++++ b/tests/RunStagingV2HardeningTests.java
+@@ -0,0 +1,109 @@
++import org.vault.exporter.ResumeStore;
++import java.io.*;
++import java.nio.file.*;
++import java.nio.charset.StandardCharsets;
++import java.security.SecureRandom;
++import java.util.*;
++import javax.crypto.*;
++import javax.crypto.spec.*;
++
++/** Offline, dependency-free JVM regression tests. Uses no Telegram credentials or traffic. */
++public final class RunStagingV2HardeningTests {
++  static int checks=0;
++  static void ok(boolean cond,String reason){checks++;if(!cond)throw new AssertionError(reason);}
++  interface Failure {void run() throws Exception;}
++  static void reject(Failure run, String why)throws Exception {
++    boolean rejected=false;
++    try {run.run();}catch(Exception x){rejected=true;}
++    ok(rejected,why);
++  }
++  static byte[] read(InputStream in)throws Exception {
++    try(InputStream a=in;ByteArrayOutputStream b=new ByteArrayOutputStream()){
++      byte[] buf=new byte[8192];int n;while((n=a.read(buf))!=-1)b.write(buf,0,n);
++      return b.toByteArray();
++    }
++  }
++  static byte[] legacy(long chatId, String path, byte[] secret, byte[] text)throws Exception {
++    Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(secret,"HmacSHA256"));
++    byte[] key=mac.doFinal(("TelegramVault resume store v1|"+chatId).getBytes(StandardCharsets.UTF_8));
++    byte[] nonce=new byte[12];new SecureRandom().nextBytes(nonce);
++    Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
++    cipher.init(Cipher.ENCRYPT_MODE,new SecretKeySpec(key,"AES"),new GCMParameterSpec(128,nonce));
++    cipher.updateAAD(("TVS1|"+chatId+"|"+path).getBytes(StandardCharsets.UTF_8));
++    ByteArrayOutputStream out=new ByteArrayOutputStream();out.write("TVS1".getBytes(StandardCharsets.US_ASCII));out.write(nonce);out.write(cipher.doFinal(text));
++    return out.toByteArray();
++  }
++  public static void main(String[] args)throws Exception {
++    byte[] secret=new byte[32];Arrays.fill(secret,(byte)21);
++    File root=Files.createTempDirectory("vault-tvs2-regress-").toFile();
++    File staging=new File(root,"stage");
++    File plain=new File(root,"input.dat");
++    long chatId=113;
++    int[] sizes={0,1,15,16,17,262143,262144,262145,786432};
++    for(int size:sizes){
++      byte[] bytes=new byte[size];new Random(1212+size).nextBytes(bytes);Files.write(plain.toPath(),bytes);
++      try(ResumeStore store=new ResumeStore(staging,chatId,secret)){
++        long id=size+2L;
++        ResumeStore.Media fingerprint=store.saveMedia(id,501,plain);
++        byte[] recovered=read(store.openMedia(id,501));
++        ok(Arrays.equals(bytes,recovered),"TVS2 corrupted size "+size);
++        ok(fingerprint.bytes==size,"Wrong media size "+size);
++        ok(store.mediaFingerprint(id,501).sha256.equals(fingerprint.sha256),"Wrong hash "+size);
++      }
++    }
++    File target=new File(staging,"chat-113/media/262147-501.enc"); // payload size 262145
++    ok(target.exists(),"Test fixture missing");
++    byte[] original=Files.readAllBytes(target.toPath());
++    ok(original[0]=='T'&&original[3]=='2',"New stage not TVS2");
++    // Dropped authenticated terminator, corruption, wrong chat/path, trailing garbage.
++    for(int cut:new int[]{1,12,20,original.length-1,original.length-16}){
++      byte[] shortened=Arrays.copyOf(original,cut);
++      Files.write(target.toPath(),shortened);
++      reject(()-> {try(ResumeStore s=new ResumeStore(staging,chatId,secret)){
++        read(s.openMedia(262147,501));}},"Truncated TVS2 accepted (cut="+cut+")");
++    }
++    Files.write(target.toPath(),original);
++    byte[] modified=original.clone();modified[16]^=0x55;
++    Files.write(target.toPath(),modified);
++    reject(()->{try(ResumeStore s=new ResumeStore(staging,chatId,secret)){
++      read(s.openMedia(262147,501));}},"Authenticated media tampering accepted");
++    byte[] extended=Arrays.copyOf(original,original.length+1);extended[extended.length-1]=3;
++    Files.write(target.toPath(),extended);
++    reject(()->{try(ResumeStore s=new ResumeStore(staging,chatId,secret)){
++      read(s.openMedia(262147,501));}},"Trailing bytes accepted");
++    Files.write(target.toPath(),original);
++    File cross=new File(staging,"chat-113/media/999-501.enc");
++    Files.copy(target.toPath(),cross.toPath());
++    reject(()->{try(ResumeStore s=new ResumeStore(staging,chatId,secret)){
++      read(s.openMedia(999,501));}},"Replayed ciphertext accepted with different AAD path");
++    try(ResumeStore s=new ResumeStore(staging,chatId,secret)){
++      reject(()->read(s.openMedia(262147,502)),"Wrong file identity accepted");
++      s.checkpoint(new ResumeStore.State(chatId,1000,1,40,8,false));
++    }
++    try(ResumeStore s=new ResumeStore(staging,chatId,secret)){
++      ResumeStore.State checkpoint=s.state();
++      ok(checkpoint.cursor==1000&&checkpoint.messages==40&&!checkpoint.historyFinished,"Checkpoint failed across process reopen");
++      s.checkpoint(new ResumeStore.State(chatId,1000,1,40,8,true));
++    }
++    try(ResumeStore s=new ResumeStore(staging,chatId,secret)){
++      ok(s.state().historyFinished,"Checkpoint terminal state not durable");
++    }
++    // TVS1 must remain readable for small pre-existing checkpoints (backward compatibility).
++    File legacyPath=new File(staging,"chat-113/checkpoint.enc");
++    ByteArrayOutputStream meta=new ByteArrayOutputStream();DataOutputStream data=new DataOutputStream(meta);
++    data.writeInt(0x52535431);data.writeLong(chatId);data.writeLong(777L);
++    data.writeInt(3);data.writeInt(12);data.writeInt(4);data.writeBoolean(false);data.close();
++    Files.write(legacyPath.toPath(),legacy(chatId,"checkpoint.enc",secret,meta.toByteArray()));
++    try(ResumeStore s=new ResumeStore(staging,chatId,secret)){
++      ok(s.state().cursor==777,"Legacy TVS1 checkpoint migration read failed");
++    }
++    // TVS1 large files fail explicitly, no accidental provider heap exhaustion.
++    byte[] legacyHuge=new byte[9*1024*1024];
++    File oversized=new File(staging,"chat-113/media/10000000-501.enc");
++    Files.write(oversized.toPath(),legacyHuge); // replace marker with legacy magic
++    try(RandomAccessFile f=new RandomAccessFile(oversized,"rw")){f.writeBytes("TVS1");}
++    reject(()->{try(ResumeStore s=new ResumeStore(staging,chatId,secret)){
++      read(s.openMedia(10000000,501));}},"Oversized legacy staging was not rejected");
++    System.out.println("PASS "+checks+" TVS2/JVM checks (boundaries, GCM authentication, replay, truncation, exact terminator, checkpoint, legacy)");
++  }
++}
+--- a/tests/RunHistoryCursorHardeningTests.java
++++ b/tests/RunHistoryCursorHardeningTests.java
+@@ -0,0 +1,34 @@
++import org.vault.exporter.HistoryCursor;
++import java.util.*;
++public class RunHistoryCursorHardeningTests {
++ static int checks;
++ static void ok(boolean a,String msg){checks++;if(!a)throw new AssertionError(msg);}
++ static void expectBad(long saved,long[] ids) throws Exception {
++   boolean fails=false;try {HistoryCursor.select(saved,ids);}catch(java.io.IOException err){fails=true;}
++   ok(fails,"invalid page accepted "+Arrays.toString(ids));
++ }
++ public static void main(String[] args) throws Exception {
++   long[] ids=new long[100_000];long next=3_000_000;
++   Random random=new Random(45321);
++   for(int i=0;i<ids.length;i++){next-=1+random.nextInt(19);ids[i]=next;}
++   Set<Long> staged=new HashSet<>();long cursor=0;int pages=0;
++   while(staged.size()<ids.length){
++     int index=0;while(index<ids.length&&ids[index]>cursor&&cursor>0)index++;
++     int count=2+(pages%98); // real TDLib can return short pages
++     long[] response=Arrays.copyOfRange(ids,index,Math.min(ids.length,index+count));
++     HistoryCursor.Selection select=HistoryCursor.select(cursor,response);
++     ok(!select.stalled && select.indices.length>0,"history stopped early");
++     for(int i:select.indices)ok(staged.add(response[i]),"duplicate");
++     cursor=select.nextCursor;
++     ok(++pages<100_001,"pagination loop");
++   }
++   for(long id:ids)ok(staged.contains(id),"lost message "+id);
++   ok(staged.size()==100_000,"incomplete result");
++   ok(HistoryCursor.select(100,new long[]{100}).stalled,"stall detection");
++   ok(HistoryCursor.select(100,new long[]{}).emptyResponse,"EOF classification");
++   expectBad(0,new long[]{0});expectBad(0,new long[]{100,100});
++   expectBad(0,new long[]{10,11});expectBad(0,new long[]{5,-1});
++   expectBad(-1,new long[]{10});expectBad(0,new long[101]);
++   System.out.println("PASS "+checks+" checks: 100000 sparse IDs, "+pages+" short pages, duplicates/orders rejected");
++ }
++}
+--- a/tests/RunStagingBoundedMemoryTest.java
++++ b/tests/RunStagingBoundedMemoryTest.java
+@@ -0,0 +1,20 @@
++import org.vault.exporter.ResumeStore;
++import java.io.*;
++import java.nio.file.*;
++import java.util.*;
++/** Must pass with -Xmx32m even when staged media is 48 MiB. */
++public final class RunStagingBoundedMemoryTest {
++  public static void main(String[] args) throws Exception {
++    File root=Files.createTempDirectory("vault-memory-test").toFile();
++    File file=new File(root,"large-synthetic-media.bin");
++    try(FileOutputStream f=new FileOutputStream(file)) {
++      byte[] block=new byte[65536];Arrays.fill(block,(byte)42);
++      for(int i=0;i<768;i++)f.write(block);
++    }
++    try(ResumeStore store=new ResumeStore(new File(root,"staging"),1,new byte[32])) {
++      if(store.saveMedia(100,501,file).bytes!=48L*1024*1024)throw new AssertionError("write lost bytes");
++      if(store.mediaFingerprint(100,501).bytes!=48L*1024*1024)throw new AssertionError("read lost bytes");
++    }
++    System.out.println("PASS: streaming 48MiB media staging under JVM 32MiB heap");
++  }
++}
+--- a/tests/RUN_TESTS_OFFLINE.sh
++++ b/tests/RUN_TESTS_OFFLINE.sh
+@@ -0,0 +1,13 @@
++#!/usr/bin/env bash
++set -euo pipefail
++cd "$(dirname "$0")/.."
++mkdir -p build/test-classes
++ROOT=app/src/main/java/org/vault/exporter
++javac -d build/test-classes \
++  "$ROOT"/{HistoryCursor,StagingCipher,ChunkedVault,ResumeStore,ArchiveWriter,ArchiveVerifier,TelegramRateLimit}.java \
++  tests/{RunCryptoTests,RunResumeTests,RunPipelineTests,RunRateLimitTests,RunStagingV2HardeningTests,RunHistoryCursorHardeningTests,RunStagingBoundedMemoryTest}.java
++for cls in RunCryptoTests RunResumeTests RunPipelineTests RunRateLimitTests RunStagingV2HardeningTests RunHistoryCursorHardeningTests; do
++  java -Xmx64m -cp build/test-classes "$cls"
++done
++java -Xmx32m -cp build/test-classes RunStagingBoundedMemoryTest
++python3 scripts/security_gate.py
