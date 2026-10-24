@@ -1,0 +1,354 @@
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/.github/workflows/build-debug-apk.yml /mnt/data/vault_exporter_next_work/.github/workflows/build-debug-apk.yml
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/.github/workflows/build-debug-apk.yml	2026-10-24 05:54:40.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/.github/workflows/build-debug-apk.yml	2026-10-24 07:28:11.554993038 +0000
+@@ -52,7 +52,10 @@
+           git -C "$RUNNER_TEMP/td" checkout -q --detach FETCH_HEAD
+           test "$(git -C "$RUNNER_TEMP/td" rev-parse HEAD)" = "$TDLIB_SHA"
+           pushd "$RUNNER_TEMP/td/example/android"
+-          docker build --build-arg TDLIB_INTERFACE=JSON \
++          # Upstream Dockerfile checks out COMMIT_HASH itself. Without this arg,
++          # it silently builds moving master, even though we fetched a pinned SHA above.
++          docker build --build-arg "COMMIT_HASH=$TDLIB_SHA" \
++            --build-arg TDLIB_INTERFACE=JSON \
+             --output "type=local,dest=$RUNNER_TEMP/tdlib-output" .
+           popd
+           mkdir -p "$RUNNER_TEMP/tdlib-extracted"
+@@ -68,23 +71,8 @@
+           fi
+           install -m 0644 "$so" app/src/main/jniLibs/arm64-v8a/libtdjson.so
+           python3 scripts/preflight.py
+-      - name: Run offline crypto regression tests
+-        run: |
+-          mkdir -p /tmp/crypto-tests
+-          javac -d /tmp/crypto-tests \
+-            app/src/main/java/org/vault/exporter/ChunkedVault.java \
+-            app/src/main/java/org/vault/exporter/ArchiveWriter.java \
+-            app/src/main/java/org/vault/exporter/ArchiveVerifier.java \
+-            app/src/main/java/org/vault/exporter/ResumeStore.java \
+-            tests/RunCryptoTests.java \
+-            tests/RunResumeTests.java \
+-            tests/RunPipelineTests.java \
+-            app/src/main/java/org/vault/exporter/TelegramRateLimit.java \
+-            tests/RunRateLimitTests.java
+-          java -cp /tmp/crypto-tests RunCryptoTests
+-          java -cp /tmp/crypto-tests RunResumeTests
+-          java -cp /tmp/crypto-tests RunPipelineTests
+-          java -cp /tmp/crypto-tests RunRateLimitTests
++      - name: Run the COMPLETE reproducible offline suite before building APK
++        run: bash RUN_ALL_OFFLINE.sh
+       - name: Confirm test data center build only
+         shell: bash
+         run: |
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/.github/workflows/offline-security-tests.yml /mnt/data/vault_exporter_next_work/.github/workflows/offline-security-tests.yml
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/.github/workflows/offline-security-tests.yml	2026-10-24 06:59:30.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/.github/workflows/offline-security-tests.yml	2026-10-24 07:28:11.556456547 +0000
+@@ -16,6 +16,6 @@
+         with:
+           distribution: temurin
+           java-version: '21'
+-      - name: Test archive, semantic integrity, crash recovery and bounded heap (offline)
++      - name: Test archive, crash recovery, TDLib lifecycle and bounded heap (offline)
+         shell: bash
+         run: bash RUN_ALL_OFFLINE.sh
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/CONTINUATION_REPORT_RU.md /mnt/data/vault_exporter_next_work/CONTINUATION_REPORT_RU.md
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/CONTINUATION_REPORT_RU.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/CONTINUATION_REPORT_RU.md	2026-10-24 07:33:39.317018795 +0000
+@@ -0,0 +1,38 @@
++# Vault Exporter Android — этап надёжности TDLib и фиксация native-сборки
++
++Дата: 24.10.2026. Основа: `Vault_Exporter_Hardened_Integration_2026-10-24.zip` (не GitHub main). Все изменения сделаны в отдельной рабочей копии; на основной Telegram-аккаунт и реальный Telegram не выходили.
++
++## Изменения
++
++1. **Устранён накопительный расход памяти в сетевом шлюзе.** Раньше `TdGateway.await` при `TimeoutException` оставлял `CompletableFuture` в `pending` до прихода ответа TDLib или закрытия клиента. Теперь запрос отменяется по тайм-ауту/прерыванию, а каждый завершённый, ошибочный или отменённый future удаляется условно (`pending.remove(id, future)`). Запоздалые ответы не попадают в новый запрос.
++2. **Добавлен самостоятельный JVM-тест сетевого жизненного цикла** `transport-jvm`: 150 параллельных отмен, тайм-аут реального `await` с проверкой очистки, запоздалые ответы, обратный порядок ответов и отмена незавершённых запросов при `stop()`. Используется исключительно искусственный `TdNative`, без JNI/Telegram.
++3. **Исправлена критичная невоспроизводимость официальной TDLib:** upstream `example/android/Dockerfile` использует `ARG COMMIT_HASH=master` и самостоятельно клонирует репозиторий. Раньше скрипт выполнял предварительный `git checkout` закреплённого SHA, но **не** передавал его Docker. Теперь аргумент `--build-arg "COMMIT_HASH=$TDLIB_SHA"` обязателен. Документация: https://github.com/tdlib/td/blob/master/example/android/README.md.
++4. Вместо устаревшего выборочного прогона Java-файлов в GitHub Actions запускается `bash RUN_ALL_OFFLINE.sh`, охватывающий TVS2, строгую верификацию, реальный ExportEngine с fake TDLib, сценарий 48 МиБ/32 МиБ и новые transport-тесты. Скрипт `ci-contract/verify_ci_contract.py` не допускает случайного возврата к плавающему `master`.
++5. **Сокращено удержание секрета в памяти:** `MainActivity` больше заранее не создаёт immutable `String` с ключом TDLib. Ключ извлекается непосредственно при обработке `authorizationStateWaitTdlibParameters` и очищается в `finally`.
++
++## Реально выполненные испытания
++
++- Полный `RUN_ALL_OFFLINE.sh`: **PASS, exit 0** в повторном фоновом прогоне. Вывод: `FULL_TEST_LOG.txt`.
++- Набор шифрования и восстановления (`TVS2`: 42 проверки): **PASS**.
++- Пагинация: 100 000 синтетических ID, 2037 коротких страниц, 204083 проверок: **PASS**.
++- Строгая проверка архивов: 36 позитивных/негативных фикстур: **PASS**.
++- Настоящий Java `ExportEngine` с искусственными TDLib, Android Context и JSON: 250 и 2000 сообщений, восемь медиа, три обрыва, повреждение staging, восстановление после обрыва финализации: **PASS**.
++- Медиа 48 МиБ при лимите JVM 32 МиБ в сквозном пути: **PASS**, но **нестабильное время выполнения**: два ограниченных по времени прогона оборвались, затем повторный одиночный и полный фоновый прогон прошли. Нельзя заявлять гарантированный предел времени или готовность к многогигабайтным архивам.
++- Новый тест жизненного цикла TDLib-запросов: **PASS**; шлюз запускался с fake `TdNative`, не с реальной библиотекой.
++- Статическая проверка защиты локальной среды и CI-контракта: **PASS** после всех изменений.
++
++## Что НЕ проверено
++
++- **Настоящая Android-сборка не создана.** Локально нет Android SDK/NDK и официальной `libtdjson.so`. CI-инструкция исправлена, но новый workflow в GitHub Actions не запускался.
++- Нет Android instrumentation, эмулятора и аппаратного тестирования, нет соединения с Telegram Test DC, нет реальной авторизации, нет подтверждения скачивания истории/файлов с сервера.
++- Нет теста 9 ГБ на телефоне, а также измеренных энергозатрат, скорости и хранения. Нулевой риск для аккаунта гарантировать нельзя.
++- В проекте намеренно ограничено множество медиаформатов; полнота **всего** Telegram-контента ещё не доказана.
++- UI-правка `MainActivity` статически проверена, но не скомпилирована Android toolchain; не считать её завершённой Android-проверкой.
++
++## Следующий безопасный этап
++
++1. В изолированной GitHub Actions ветке собрать именно закреплённую TDLib с `COMMIT_HASH` и проверить SHA-256 APK и `libtdjson.so`, без входа в Telegram.
++2. Провести Android emulator smoke/instrumentation тесты на тестовом датацентре и синтетических данных, проверить разрешения и отсутствие нежелательных сетевых соединений.
++3. Только после прохождения этих ворот — тестовый аккаунт Telegram, независимо от основного. Не вводить личные коды и пароли в сообщения чата, GitHub Issues или CI.
++
++**Не обновляли GitHub main. Не выпускали APK. Не трогали основной Telegram-аккаунт.**
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/FULL_TEST_LOG.txt /mnt/data/vault_exporter_next_work/FULL_TEST_LOG.txt
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/FULL_TEST_LOG.txt	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/FULL_TEST_LOG.txt	2026-10-24 07:33:40.484128323 +0000
+@@ -0,0 +1,15 @@
++PASS: authenticated streaming, >3 blocks, password, tampering, truncation, ZIP entries, path filtering; bytes=788509
++PASS resume: restart, reuse, confidentiality, isolation, wrong key, tamper
++PASS pipeline: encrypted staging -> password archive -> verified media + messages
++PASS: Telegram rate-limit parser
++PASS 42 TVS2/JVM checks (boundaries, GCM authentication, replay, truncation, exact terminator, checkpoint, legacy)
++PASS 204083 checks: 100000 sparse IDs, 2037 short pages, duplicates/orders rejected
++PASS 36 verifier fixtures: complete archive + adversarial counts, ids, malformed JSON, tamper, path and missing file rejection
++PASS: streaming 48MiB media staging under JVM 32MiB heap
++PASS: independent SHA-256/length verification for 64 MiB media under JVM 32 MiB heap
++PASS: static manifest, backup and outbound-code safeguards (not a security audit)
++PASS: test DC default, production opt-in, separate app identities, no auto-connect
++PASS Hardened ExportEngine+TVS2+strict verifier: 250 and 2000 messages, eight media kinds, three outages, media retry, interrupted finalization, SHA-256, wrong password; bytes=151999
++PASS bounded-memory real ExportEngine+TVS2+strict ArchiveVerifier: 48 MiB video @ -Xmx32m, TVA bytes=58511
++PASS: 150 cancellations, awaited timeout, late/out-of-order replies, and session stop release pending work (fake TDLib)
++PASS CI build contract: pinned TDLib ea3f69ce11aef458bfbb09869b809ede4447486f and complete offline suite
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/README.md /mnt/data/vault_exporter_next_work/README.md
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/README.md	2026-10-24 06:59:28.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/README.md	2026-10-24 07:33:40.199646894 +0000
+@@ -1,3 +1,5 @@
++> Обновление 24.10.2026: проверка жизненного цикла TDLib-запросов, строгий pin Docker-сборки и отдельный отчёт `CONTINUATION_REPORT_RU.md`. Без Android APK и без Telegram-аккаунта.
++
+ # Vault Exporter v0.9 — безопасное начало тестирования (исходники, НЕ APK)
+ 
+ > **Security hardening update (2026-10-24):** в этой рабочей копии добавлена строгая независимая потоковая проверка архивов, включая SHA-256 и размер каждого медиа, уникальность/порядок сообщений, контроль манифеста. 32 синтетических фикстуры + 64 МиБ медиа при 32 МиБ памяти прошли. См. `VERIFIER_HARDENING_2026-10-24_RU.md`. Это НЕ Android-release и не проверка настоящего Telegram.
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/RUN_ALL_OFFLINE.sh /mnt/data/vault_exporter_next_work/RUN_ALL_OFFLINE.sh
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/RUN_ALL_OFFLINE.sh	2026-10-24 06:59:28.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/RUN_ALL_OFFLINE.sh	2026-10-24 07:28:11.795087639 +0000
+@@ -3,3 +3,5 @@
+ cd "$(dirname "$0")"
+ bash tests/RUN_TESTS_OFFLINE.sh
+ bash integration-jvm/RUN_INTEGRATION_JVM.sh
++bash transport-jvm/RUN_TRANSPORT_JVM.sh
++python3 ci-contract/verify_ci_contract.py
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/app/src/main/java/org/vault/exporter/MainActivity.java /mnt/data/vault_exporter_next_work/app/src/main/java/org/vault/exporter/MainActivity.java
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/app/src/main/java/org/vault/exporter/MainActivity.java	2026-10-24 05:54:40.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/app/src/main/java/org/vault/exporter/MainActivity.java	2026-10-24 07:32:03.758593568 +0000
+@@ -91,12 +91,11 @@
+     showStatus("Инициализация TDLib по вашему запросу…");
+     worker.execute(() -> {
+       try {
+-        byte[] secret = new SessionSecrets(this).getOrCreate();
+-        String key = Base64.encodeToString(secret, Base64.NO_WRAP);
+-        Arrays.fill(secret, (byte)0);
++        // Do not materialize the Keystore-wrapped TDLib secret as a long-lived
++        // immutable String before TDLib actually requests its parameters.
+         td = new TdGateway(this::onTdEvent);
+         JSONObject stateObj = td.await(TdGateway.cmd("getAuthorizationState"),30);
+-        onAuthorizationState(stateObj, key);
++        onAuthorizationState(stateObj);
+       } catch(Throwable e) {
+         showStatus("Ошибка TDLib: " + e.getClass().getSimpleName() + ". Сеанс не подтверждён.");
+         runOnUiThread(() -> {clearUi(); button("Вернуться", this::showWelcome);});
+@@ -124,16 +123,17 @@
+   private void clearUi() { interactive.removeAllViews(); }
+   private void onTdEvent(JSONObject event) {
+     if ("updateAuthorizationState".equals(event.optString("@type")))
+-      onAuthorizationState(event.optJSONObject("authorization_state"), null);
++      onAuthorizationState(event.optJSONObject("authorization_state"));
+   }
+-  private void onAuthorizationState(JSONObject state, String firstKey) {
++  private void onAuthorizationState(JSONObject state) {
+     if (state == null) return;
+     String name=state.optString("@type");
+     if ("authorizationStateWaitTdlibParameters".equals(name)) {
+       if (!initializing.compareAndSet(false,true)) return;
+       worker.execute(() -> {
+         try {
+-          byte[] secret = firstKey == null ? new SessionSecrets(this).getOrCreate() : Base64.decode(firstKey,Base64.NO_WRAP);
++          byte[] secret = new SessionSecrets(this).getOrCreate();
++          try {
+           JSONObject params=TdGateway.cmd("setTdlibParameters")
+             .put("use_test_dc",BuildConfig.TELEGRAM_TEST_DC)
+             .put("database_directory",new File(getFilesDir(),"tdlib/database").getAbsolutePath())
+@@ -145,8 +145,8 @@
+             .put("system_language_code",Locale.getDefault().getLanguage())
+             .put("device_model",android.os.Build.MODEL).put("system_version",android.os.Build.VERSION.RELEASE)
+             .put("application_version","0.9-test-gated-alpha");
+-          Arrays.fill(secret,(byte)0);
+           td.await(params,30);
++          } finally {Arrays.fill(secret,(byte)0);}
+         } catch(Exception e) { initializing.set(false); showStatus("Не удалось настроить TDLib: " + e.getMessage()); }
+       });
+       return;
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/app/src/main/java/org/vault/exporter/TdGateway.java /mnt/data/vault_exporter_next_work/app/src/main/java/org/vault/exporter/TdGateway.java
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/app/src/main/java/org/vault/exporter/TdGateway.java	2026-10-24 05:54:40.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/app/src/main/java/org/vault/exporter/TdGateway.java	2026-10-24 07:26:46.814002310 +0000
+@@ -41,12 +41,23 @@
+     String id = Long.toString(sequence.incrementAndGet());
+     CompletableFuture<JSONObject> result = new CompletableFuture<>();
+     pending.put(id, result);
++    // Do not retain timed-out, cancelled or otherwise completed calls indefinitely.
++    // Remove only OUR future: late replies must never resolve a different request.
++    result.whenComplete((value, error) -> pending.remove(id, result));
+     try { request.put("@extra", id); TdNative.send(client, request.toString()); }
+-    catch (Exception e) { pending.remove(id); result.completeExceptionally(e); }
++    catch (Exception e) { result.completeExceptionally(e); }
+     return result;
+   }
+   public JSONObject await(JSONObject request, long timeoutSeconds) throws Exception {
+-    JSONObject response = call(request).get(timeoutSeconds, TimeUnit.SECONDS);
++    CompletableFuture<JSONObject> future = call(request);
++    JSONObject response;
++    try {
++      response = future.get(timeoutSeconds, TimeUnit.SECONDS);
++    } catch (TimeoutException | InterruptedException ex) {
++      // No retry here: the caller owns resume/retry policy. Late responses are ignored.
++      future.cancel(false);
++      throw ex;
++    }
+     if ("error".equals(response.optString("@type"))) {
+       int code = response.optInt("code");
+       String message = response.optString("message");
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/ci-contract/verify_ci_contract.py /mnt/data/vault_exporter_next_work/ci-contract/verify_ci_contract.py
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/ci-contract/verify_ci_contract.py	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/ci-contract/verify_ci_contract.py	2026-10-24 07:28:11.795087639 +0000
+@@ -0,0 +1,15 @@
++#!/usr/bin/env python3
++"""Sanity-check offline release invariants. This does NOT verify a real binary build."""
++from pathlib import Path
++import re
++root=Path(__file__).resolve().parent.parent
++build=(root/'.github/workflows/build-debug-apk.yml').read_text()
++sha=re.search(r'^\s*TDLIB_SHA=([0-9a-f]{40})$',build,re.M)
++assert sha, 'Missing explicit 40-digit upstream TDLib SHA'
++assert 'git -C "$RUNNER_TEMP/td" rev-parse HEAD' in build, 'No source pin check'
++assert '--build-arg "COMMIT_HASH=$TDLIB_SHA"' in build, 'Docker still builds moving master'
++assert '--build-arg TDLIB_INTERFACE=JSON' in build, 'Must build JSON client'
++assert 'bash RUN_ALL_OFFLINE.sh' in build, 'Build workflow missing complete offline suite'
++assert 'verifyExporterBuild' in (root/'app/build.gradle').read_text(), 'Guard missing'
++assert 'test' in (root/'app/build.gradle').read_text(), 'Test DC flag missing'
++print('PASS CI build contract: pinned TDLib',sha.group(1),'and complete offline suite')
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/scripts/security_gate.py /mnt/data/vault_exporter_next_work/scripts/security_gate.py
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/scripts/security_gate.py	2026-10-24 05:54:40.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/scripts/security_gate.py	2026-10-24 07:32:03.758994984 +0000
+@@ -37,3 +37,7 @@
+ assert 'showWelcome();' in activity
+ print('PASS: test DC default, production opt-in, separate app identities, no auto-connect')
+ 
++
++# Avoid unnecessary immutable copies of the database encryption secret in UI startup.
++assert 'firstKey' not in activity
++assert 'String key = Base64.encodeToString(secret' not in activity
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/transport-jvm/RUN_TRANSPORT_JVM.sh /mnt/data/vault_exporter_next_work/transport-jvm/RUN_TRANSPORT_JVM.sh
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/transport-jvm/RUN_TRANSPORT_JVM.sh	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/transport-jvm/RUN_TRANSPORT_JVM.sh	2026-10-24 07:26:47.072977283 +0000
+@@ -0,0 +1,11 @@
++#!/usr/bin/env bash
++set -euo pipefail
++cd "$(dirname "$0")/.."
++OUT=build/transport-test-classes
++mkdir -p "$OUT"
++javac -d "$OUT" \
++  integration-jvm/fakes/org/json/*.java \
++  transport-jvm/fakes/org/vault/exporter/TdNative.java \
++  app/src/main/java/org/vault/exporter/{TdGateway,TelegramRateLimit}.java \
++  transport-jvm/TestTdGatewayLifecycle.java
++java -Xmx32m -cp "$OUT" org.vault.exporter.TestTdGatewayLifecycle
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/transport-jvm/TestTdGatewayLifecycle.java /mnt/data/vault_exporter_next_work/transport-jvm/TestTdGatewayLifecycle.java
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/transport-jvm/TestTdGatewayLifecycle.java	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/transport-jvm/TestTdGatewayLifecycle.java	2026-10-24 07:26:47.072136390 +0000
+@@ -0,0 +1,71 @@
++package org.vault.exporter;
++import org.json.JSONObject;
++import java.lang.reflect.Field;
++import java.util.concurrent.*;
++import java.util.*;
++
++/** Regression for TDLib request timeout leak, out-of-order replies, and close cancellation. */
++public final class TestTdGatewayLifecycle {
++  private static void check(boolean okay,String message){if(!okay)throw new AssertionError(message);}
++  @SuppressWarnings("unchecked")
++  private static Map<String,?> pending(TdGateway g)throws Exception {
++    Field f=TdGateway.class.getDeclaredField("pending");f.setAccessible(true);
++    return (Map<String,?>) f.get(g);
++  }
++  private static String sentId()throws Exception {
++    String request=TdNative.outbound.poll(2,TimeUnit.SECONDS);
++    check(request!=null,"Request was not dispatched");
++    return new JSONObject(request).getString("@extra");
++  }
++  public static void main(String[] args)throws Exception {
++    TdNative.flush();
++    ExecutorService pool=Executors.newCachedThreadPool();
++    TdGateway gw=new TdGateway(event->{});
++    try {
++      // 150 asynchronous unanswered calls, all cancelled: no pending map growth.
++      List<CompletableFuture<JSONObject>> jobs=new ArrayList<>();
++      for(int i=0;i<150;i++)jobs.add(gw.call(TdGateway.cmd("getChatHistory")));
++      String first=sentId();
++      for(int i=1;i<150;i++)sentId();
++      check(pending(gw).size()==150,"Expected requests are not pending");
++      jobs.forEach(j->j.cancel(false));
++      check(pending(gw).isEmpty(),"Cancelled async calls leaked from pending map");
++      TdNative.reply(91,first,"ok");
++      Thread.sleep(75);
++      check(pending(gw).isEmpty(),"Late reply resurrected cancelled request");
++
++      // A real await() timeout must cancel and release its own entry.
++      Future<?> timeout=pool.submit(()-> {
++        try {gw.await(TdGateway.cmd("getChatHistory"),0);throw new AssertionError("Missing TimeoutException");}
++        catch(TimeoutException expected){} catch(Exception x){throw new RuntimeException(x);}
++      });
++      String timedOutId=sentId();
++      timeout.get(3,TimeUnit.SECONDS);
++      check(pending(gw).isEmpty(),"Timed-out await retained request");
++      TdNative.reply(91,timedOutId,"ok");
++      Thread.sleep(75);
++      check(pending(gw).isEmpty(),"Late timed-out response retained request");
++
++      // A new request must only accept the response carrying its own @extra.
++      CompletableFuture<JSONObject> one=gw.call(TdGateway.cmd("getChat"));
++      CompletableFuture<JSONObject> two=gw.call(TdGateway.cmd("getChat"));
++      String oneId=sentId(),twoId=sentId();
++      TdNative.reply(91,twoId,"ok");
++      check("ok".equals(two.get(2,TimeUnit.SECONDS).optString("@type")),"Wrong second reply");
++      check(!one.isDone(),"Received reply for another request");
++      TdNative.reply(91,oneId,"error");
++      check("error".equals(one.get(2,TimeUnit.SECONDS).optString("@type")),"Wrong first reply");
++      check(pending(gw).isEmpty(),"Completed requests retained");
++
++      CompletableFuture<JSONObject> never=gw.call(TdGateway.cmd("getChatHistory"));
++      sentId();
++      gw.stop();
++      check(never.isCancelled(),"Stop did not cancel inflight request");
++      check(pending(gw).isEmpty(),"Stop leaked pending calls");
++      boolean denied=false;
++      try{gw.call(TdGateway.cmd("getChat"));}catch(IllegalStateException expected){denied=true;}
++      check(denied,"Stopped TDLib accepted new requests");
++      System.out.println("PASS: 150 cancellations, awaited timeout, late/out-of-order replies, and session stop release pending work (fake TDLib)");
++    } finally {gw.stop();pool.shutdownNow();}
++  }
++}
+diff -ruN '--exclude=build' '--exclude=FILE_MANIFEST_SHA256.json' '--exclude=*.class' /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/transport-jvm/fakes/org/vault/exporter/TdNative.java /mnt/data/vault_exporter_next_work/transport-jvm/fakes/org/vault/exporter/TdNative.java
+--- /mnt/data/vault_exporter_patch_source/Vault-Exporter-Hardened-Integration/transport-jvm/fakes/org/vault/exporter/TdNative.java	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/vault_exporter_next_work/transport-jvm/fakes/org/vault/exporter/TdNative.java	2026-10-24 07:26:47.070265741 +0000
+@@ -0,0 +1,20 @@
++package org.vault.exporter;
++import java.util.concurrent.*;
++import java.util.concurrent.atomic.*;
++import org.json.JSONObject;
++/** In-process synthetic TDLib responses; does not load JNI or contact Telegram. */
++public final class TdNative {
++  static final BlockingQueue<String> inbound=new LinkedBlockingQueue<>();
++  static final BlockingQueue<String> outbound=new LinkedBlockingQueue<>();
++  static final AtomicInteger nextClient=new AtomicInteger(91);
++  static int createClient(){return nextClient.getAndIncrement();}
++  static void send(long client,String request){outbound.add(request);}
++  static String receive(double seconds){
++    try{return inbound.poll(Math.max(1,(long)(seconds*1000)), TimeUnit.MILLISECONDS);}
++    catch(InterruptedException e){Thread.currentThread().interrupt();return null;}
++  }
++  static void reply(long client,String id,String type){
++    inbound.add(new JSONObject().put("@client_id",client).put("@extra",id).put("@type",type).toString());
++  }
++  static void flush(){inbound.clear();outbound.clear();}
++}
