@@ -23,6 +23,7 @@ jobs:
           SRC="$RUNNER_TEMP/src/Vault-Exporter-Android-v09/app/src/main/java/org/vault/exporter/ExportEngine.java"
           python3 exporter-integration/patch_export_engine.py "$SRC"
           python3 exporter-integration/guard_chat_identity.py "$SRC"
+          cp exporter-integration/HistoryCursor.java "$(dirname "$SRC")/HistoryCursor.java"
           python3 - "$SRC" <<'PY'
           from pathlib import Path
           import sys
