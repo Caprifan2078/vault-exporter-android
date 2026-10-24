@@ -24,8 +24,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -s quarantine/app-debug.apk
-          (cd quarantine && sha256sum -c APK_SHA256.txt)
+          APK=$(find quarantine -type f -name app-debug.apk -print -quit)
+          test -n "$APK" && test -s "$APK"
+          HASHES=$(find quarantine -type f -name APK_SHA256.txt -print -quit)
+          test -n "$HASHES"
+          EXPECTED=$(awk '{print $1}' "$HASHES")
+          echo "$EXPECTED  $APK" | sha256sum -c -
+          echo "APK_UNDER_TEST=$GITHUB_WORKSPACE/$APK" >> "$GITHUB_ENV"
       - name: Install emulator SDK components
         shell: bash
         run: |
@@ -36,8 +41,6 @@ jobs:
           "$SDK_MANAGER" --sdk_root="$SDK_ROOT" --install 'platforms;android-35' 'platform-tools' 'emulator' 'system-images;android-35;google_apis;arm64-v8a'
       - name: Boot ARM64 emulator and validate offline screens
         uses: reactivecircus/android-emulator-runner@v2
-        env:
-          APK_UNDER_TEST: ${{ github.workspace }}/quarantine/app-debug.apk
         with:
           api-level: 35
           target: google_apis
