@@ -44,6 +44,9 @@ jobs:
           rm -rf "$SOURCE/build"
           git switch --orphan "$TARGET"
           cp -a "$SOURCE"/. ./
+          # GitHub Actions' GITHUB_TOKEN cannot create workflow files; publish
+          # source/test files only and add workflows later via GitHub connector.
+          rm -rf .github/workflows
           git add -A
           if git diff --cached --name-only | grep -E '(^|/)(\.env|id_rsa|private[-_]key|secrets?\.json)$'; then
             echo 'Unexpected secret-named file; abort' >&2
