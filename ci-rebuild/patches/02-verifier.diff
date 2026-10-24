@@ -1,0 +1,859 @@
+diff -ruN before/Vault-Exporter-Hardening-Review/.github/workflows/offline-security-tests.yml after/Vault-Exporter-Hardening-Review/.github/workflows/offline-security-tests.yml
+--- before/Vault-Exporter-Hardening-Review/.github/workflows/offline-security-tests.yml	2026-10-24 06:39:56.333156425 +0000
++++ after/Vault-Exporter-Hardening-Review/.github/workflows/offline-security-tests.yml	2026-10-24 06:39:56.342845662 +0000
+@@ -9,39 +9,13 @@
+ jobs:
+   offline-tests:
+     runs-on: ubuntu-24.04
+-    timeout-minutes: 10
++    timeout-minutes: 15
+     steps:
+       - uses: actions/checkout@v4
+       - uses: actions/setup-java@v4
+         with:
+           distribution: temurin
+           java-version: '17'
+-      - name: Check test environment default and privacy manifest
+-        run: python3 scripts/security_gate.py
+-      - name: Compile local-only archive tests
+-        run: |
+-          mkdir -p build/test-classes
+-          javac -d build/test-classes \
+-            app/src/main/java/org/vault/exporter/ChunkedVault.java \
+-            app/src/main/java/org/vault/exporter/ArchiveWriter.java \
+-            app/src/main/java/org/vault/exporter/ArchiveVerifier.java \
+-            app/src/main/java/org/vault/exporter/ResumeStore.java \
+-            app/src/main/java/org/vault/exporter/StagingCipher.java \
+-            app/src/main/java/org/vault/exporter/HistoryCursor.java \
+-            app/src/main/java/org/vault/exporter/TelegramRateLimit.java \
+-            tests/RunCryptoTests.java \
+-            tests/RunResumeTests.java \
+-            tests/RunPipelineTests.java \
+-            tests/RunRateLimitTests.java \
+-            tests/RunStagingV2HardeningTests.java \
+-            tests/RunStagingBoundedMemoryTest.java \
+-            tests/RunHistoryCursorHardeningTests.java
+-      - name: Check archives and resume without a Telegram account
+-        run: |
+-          java -cp build/test-classes RunCryptoTests
+-          java -cp build/test-classes RunResumeTests
+-          java -cp build/test-classes RunPipelineTests
+-          java -cp build/test-classes RunRateLimitTests
+-          java -Xmx64m -cp build/test-classes RunStagingV2HardeningTests
+-          java -Xmx64m -cp build/test-classes RunHistoryCursorHardeningTests
+-          java -Xmx32m -cp build/test-classes RunStagingBoundedMemoryTest
++      - name: Test archive, semantic integrity, crash recovery and bounded heap (offline)
++        shell: bash
++        run: bash tests/RUN_TESTS_OFFLINE.sh
+diff -ruN before/Vault-Exporter-Hardening-Review/FILE_MANIFEST_SHA256.json after/Vault-Exporter-Hardening-Review/FILE_MANIFEST_SHA256.json
+--- before/Vault-Exporter-Hardening-Review/FILE_MANIFEST_SHA256.json	2026-10-24 06:39:56.342236783 +0000
++++ after/Vault-Exporter-Hardening-Review/FILE_MANIFEST_SHA256.json	1970-01-01 00:00:00.000000000 +0000
+@@ -1,237 +0,0 @@
+-{
+-  "source_baseline_sha256": "6aa2c1c5805b6044b98a7182b5dcd3cbcd80683429cd1d916779463b047fcef5",
+-  "github_head": "c96f19d41da58ca78457caa6c9cdd7f694ba9afb",
+-  "status": "REVIEW_ONLY_NO_APK",
+-  "files": [
+-    {
+-      "path": ".github/workflows/build-debug-apk.yml",
+-      "bytes": 4992,
+-      "sha256": "2dbbc5e33b4455662c1aefceeaee52ece9a5a381906e8b8f13bcf3dda2668610"
+-    },
+-    {
+-      "path": ".github/workflows/offline-security-tests.yml",
+-      "bytes": 1982,
+-      "sha256": "68a5a209ddc7c428d3bc7ccd011f2776d739e59100b6d0ee33a4fb2ec5bf105a"
+-    },
+-    {
+-      "path": ".gitignore",
+-      "bytes": 88,
+-      "sha256": "159364b5a1c713f3a36c7f572ae829b57b5a4bdf102b9d03d5046ebafd9b9ec3"
+-    },
+-    {
+-      "path": "HARDENING_REPORT_RU.md",
+-      "bytes": 9016,
+-      "sha256": "3bcfc3eb79e0f58bf325547c93ca16e219ec83dcbe6c669c6793bed7cba78467"
+-    },
+-    {
+-      "path": "README.md",
+-      "bytes": 5245,
+-      "sha256": "373bcd39fa5f7e6568664f9969a493db990aa642b23738cbdb3e3eef5b1a11c6"
+-    },
+-    {
+-      "path": "STATUS_RU.md",
+-      "bytes": 1172,
+-      "sha256": "7f52bdbd0b8162a921c28eb4be44a11cf22453c0eef494b632202ab764a15bd9"
+-    },
+-    {
+-      "path": "TEST_RUN_RU.txt",
+-      "bytes": 1005,
+-      "sha256": "e6905cfb0819914e2e15073ba475de253cae792556dc719918d222f2b039e9b1"
+-    },
+-    {
+-      "path": "app/build.gradle",
+-      "bytes": 3300,
+-      "sha256": "34e61d12c3877dc6b209a789a4691c6e5f7653ec2f2ce7bd0a40bcc43819f1dd"
+-    },
+-    {
+-      "path": "app/proguard-rules.pro",
+-      "bytes": 105,
+-      "sha256": "d00b922fdaf82cd5f38acba299382bc33c88ccaa179fdfb5bfcaf0f51c27f4bc"
+-    },
+-    {
+-      "path": "app/src/main/AndroidManifest.xml",
+-      "bytes": 954,
+-      "sha256": "c0e88a26c1b19eb644af2e9a97787c412f50f0d586b91fa8b63d542219a58f64"
+-    },
+-    {
+-      "path": "app/src/main/cpp/CMakeLists.txt",
+-      "bytes": 252,
+-      "sha256": "2afd5b6a5f02daf4f461200c40cea127f957f353c59e618bf631f958787e2cd0"
+-    },
+-    {
+-      "path": "app/src/main/cpp/vaultbridge.cpp",
+-      "bytes": 2881,
+-      "sha256": "95249fd81f9a1908ed8e78fb013940d4cf4b0738df0673f7261b99d1ee3a1e43"
+-    },
+-    {
+-      "path": "app/src/main/java/org/vault/exporter/ArchiveVerifier.java",
+-      "bytes": 1849,
+-      "sha256": "f1b96cb7b5071e332ca3de4a8cc1eda5d2037efb41da3039d5f3765a2a0aaedc"
+-    },
+-    {
+-      "path": "app/src/main/java/org/vault/exporter/ArchiveWriter.java",
+-      "bytes": 2437,
+-      "sha256": "8a49bb192c969702aef390e29d9cb193f60858aa6573b96e20a316d6740bc35e"
+-    },
+-    {
+-      "path": "app/src/main/java/org/vault/exporter/ChunkedVault.java",
+-      "bytes": 6390,
+-      "sha256": "6874c4f45e0b025ab52c98c0b0601cafef46305631ee64885fab840c16f01b16"
+-    },
+-    {
+-      "path": "app/src/main/java/org/vault/exporter/ExportEngine.java",
+-      "bytes": 20297,
+-      "sha256": "4aa088237d45e2ad20d74100afbe2d3b0fc3cedce85c21c01f2590aca3875f11"
+-    },
+-    {
+-      "path": "app/src/main/java/org/vault/exporter/HistoryCursor.java",
+-      "bytes": 1473,
+-      "sha256": "415266fdfac88999be3b011118263f4c300891963b55a47034f18996c7e8d1bc"
+-    },
+-    {
+-      "path": "app/src/main/java/org/vault/exporter/MainActivity.java",
+-      "bytes": 29576,
+-      "sha256": "d4f7c65a35a42bbd043f6d19ca9c792b1cc9f7b91da2f8243250e9ef079e3095"
+-    },
+-    {
+-      "path": "app/src/main/java/org/vault/exporter/ResumeStore.java",
+-      "bytes": 9826,
+-      "sha256": "b06e20c0f7856ed45bc4dd461d949895a88ec83ffbe97801c762eecc659d885d"
+-    },
+-    {
+-      "path": "app/src/main/java/org/vault/exporter/SessionSecrets.java",
+-      "bytes": 2959,
+-      "sha256": "321fdc6e4a946fb5225136485940972b0b5791649fc5156dc2a0c8fdbbe6bf5f"
+-    },
+-    {
+-      "path": "app/src/main/java/org/vault/exporter/StagingCipher.java",
+-      "bytes": 5947,
+-      "sha256": "2d503e7c6a8afb0b7905cb58940b22d2aace440c98fd0f8a916ca94f834ac59b"
+-    },
+-    {
+-      "path": "app/src/main/java/org/vault/exporter/TdGateway.java",
+-      "bytes": 3558,
+-      "sha256": "7fb5d8cf8e3cc24777cfad9272a7593d2a968759b21aadf9f9c68cb6bac0edf3"
+-    },
+-    {
+-      "path": "app/src/main/java/org/vault/exporter/TdNative.java",
+-      "bytes": 399,
+-      "sha256": "5ee4a94f4706d21cef0243d98899fc2fdc9747f668b76b4a46c25f1083456b62"
+-    },
+-    {
+-      "path": "app/src/main/java/org/vault/exporter/TelegramRateLimit.java",
+-      "bytes": 1167,
+-      "sha256": "9e570764b4a4bfd884cbbd1b6b222612e94638d88c10928dfa2f1ef0d6cb3663"
+-    },
+-    {
+-      "path": "app/src/main/jniLibs/arm64-v8a/README.txt",
+-      "bytes": 223,
+-      "sha256": "c306d0386e885edace8d7207dd51f80f1ee0a7f184575c2295aca21dc30511de"
+-    },
+-    {
+-      "path": "app/src/main/res/xml/data_extraction_rules.xml",
+-      "bytes": 572,
+-      "sha256": "cd3613bb8f401f7e5ca7671c9441fdd712d2d411b470fdfb0e251e986fa51449"
+-    },
+-    {
+-      "path": "build.gradle",
+-      "bytes": 69,
+-      "sha256": "a17900030e5094e7c68b9cdd4a833a63a16a8ba21eef8336f4a4b39f35b35d75"
+-    },
+-    {
+-      "path": "docs/BUILD_APK_NO_COMMANDS_RU.md",
+-      "bytes": 3387,
+-      "sha256": "164c4a43486befa8542fb4e2858e015eab6354e481284da79330519beb000607"
+-    },
+-    {
+-      "path": "docs/BUILD_APK_RU.md",
+-      "bytes": 3175,
+-      "sha256": "ea160b93debd772aeabb83ce5dc70886543b4041d71f6a1365c5e67f0ea705b0"
+-    },
+-    {
+-      "path": "docs/FORMAT_RU.md",
+-      "bytes": 6278,
+-      "sha256": "2c1eecaed290eae8a8883808f533eb2b764e8c668c63d9252b6fffbf6714d2f5"
+-    },
+-    {
+-      "path": "docs/RELEASE_GATES_RU.md",
+-      "bytes": 5097,
+-      "sha256": "546f8a9c6f1ffaf49f60dddb05d9d5bbc86175d81bc023e5dae3a85d67b89f7f"
+-    },
+-    {
+-      "path": "docs/SECURITY_REVIEW_V07_RU.md",
+-      "bytes": 4053,
+-      "sha256": "de5cd9a36d151f4ccb92c071f64aa32a2dd25b09981aa63c20b39e5be5ccd34b"
+-    },
+-    {
+-      "path": "docs/SECURITY_RU.md",
+-      "bytes": 7567,
+-      "sha256": "ac11bd8b1b8e5b5780d4b78baf53df3e6a4ef6d1bb29914244462ff69afa9d57"
+-    },
+-    {
+-      "path": "gradle.properties",
+-      "bytes": 76,
+-      "sha256": "fdcda40a82e36d5031ec21ee8685e7275cf30d5bb916927893a6687b70b5006c"
+-    },
+-    {
+-      "path": "scripts/preflight.py",
+-      "bytes": 1150,
+-      "sha256": "76e2c2f09092271815bdc8a23100588d997c48fcba12aae1a5f578ea01c0fe75"
+-    },
+-    {
+-      "path": "scripts/security_gate.py",
+-      "bytes": 2365,
+-      "sha256": "dccea582ceab2a9d154a745a0d4365d358cb764304e17002ed78c7c6933d8ae8"
+-    },
+-    {
+-      "path": "settings.gradle",
+-      "bytes": 282,
+-      "sha256": "74611a14dce2bfa33838b20cc53eadb0d4c459ae563588423556065822e4bf5d"
+-    },
+-    {
+-      "path": "tests/RUN_TESTS_OFFLINE.sh",
+-      "bytes": 733,
+-      "sha256": "cb1ae8e6570f6b00709644b49613b678d8cd5bd00a5e1cdbd6300cb8ac914f3b"
+-    },
+-    {
+-      "path": "tests/RunCryptoTests.java",
+-      "bytes": 2364,
+-      "sha256": "968a4a4768ff6fcdf46919d118abe426e6891bf1adbf97895b8b616fe554cf88"
+-    },
+-    {
+-      "path": "tests/RunHistoryCursorHardeningTests.java",
+-      "bytes": 1883,
+-      "sha256": "cab2f8e028bed4ee89fb5e2aa558814d4843e6f7ef886e2f2f8cf1ab33f1cc2a"
+-    },
+-    {
+-      "path": "tests/RunPipelineTests.java",
+-      "bytes": 3201,
+-      "sha256": "5219ef6cd2017748cf67e33a9dd6ead20bdd2804edada57394365deb51965aa6"
+-    },
+-    {
+-      "path": "tests/RunRateLimitTests.java",
+-      "bytes": 729,
+-      "sha256": "0af495408e6df70d36d3a1234e17de3c3a686b4c6f24336b5c5d4abed2e5d728"
+-    },
+-    {
+-      "path": "tests/RunResumeTests.java",
+-      "bytes": 3330,
+-      "sha256": "d2e0105a676397964940c6907c086c10379976fa9dffba6d53a803c0582cd686"
+-    },
+-    {
+-      "path": "tests/RunStagingBoundedMemoryTest.java",
+-      "bytes": 969,
+-      "sha256": "fbaf59554b493f1b22a84f456612a05c2c36aef7b0f2a8c8778acc18a586af94"
+-    },
+-    {
+-      "path": "tests/RunStagingV2HardeningTests.java",
+-      "bytes": 6359,
+-      "sha256": "3f7084e12546bae8d718d84ea9591a2904a7485ad699a6fcebb3d3173d02262b"
+-    },
+-    {
+-      "path": "tests/sample_fake_chat.tva",
+-      "bytes": 256921,
+-      "sha256": "06a9ec1538cf4c03eafa33067360ac66e313f2e60366043de40f4d7f37a7c474"
+-    }
+-  ]
+-}
+\ No newline at end of file
+diff -ruN before/Vault-Exporter-Hardening-Review/HARDENING_REPORT_RU.md after/Vault-Exporter-Hardening-Review/HARDENING_REPORT_RU.md
+--- before/Vault-Exporter-Hardening-Review/HARDENING_REPORT_RU.md	2026-10-24 06:39:56.333877623 +0000
++++ after/Vault-Exporter-Hardening-Review/HARDENING_REPORT_RU.md	2026-10-24 06:39:56.343148149 +0000
+@@ -4,6 +4,8 @@
+ **Статус:** `REVIEW_ONLY / NOT_RELEASE / NO_TELEGRAM_LOGIN`  
+ **Источник:** локальный официальный для проекта v0.9 `Vault-Exporter-Android-v09-source.zip`, SHA-256 `6aa2c1c5805b6044b98a7182b5dcd3cbcd80683429cd1d916779463b047fcef5`; проверенный приватный GitHub `adolfmerkel196-ux/vault-exporter-android`, ветка `main`, commit `c96f19d41da58ca78457caa6c9cdd7f694ba9afb` (23.10.2026).
+ 
++> **Обновление 24.10.2026 (следующий этап):** исходный блокер № 1 («семантический verifier») исправлен в локальной рабочей копии. Пройдены 32 adversarial фикстуры и проверка 64 МиБ/32 МиБ heap. Подробности — `VERIFIER_HARDENING_2026-10-24_RU.md`. Остальные блокеры сохраняются. Последующие пункты этого отчёта описывают состояние *до* исправления verifier.
++
+ ## Что обнаружено и подтверждено
+ 
+ 1. **Критичная по надёжности ошибка TVS1 staging:** `ResumeStore.open()` использовал `CipherInputStream` с AES-GCM для целого медиафайла. Провайдер SunJCE буферизует все зашифрованные данные до завершения тега. **Воспроизведено:** staging 48 МиБ при `java -Xmx32m` падал с `OutOfMemoryError` внутри `GaloisCounterMode$GCMDecrypt.doUpdate()`. Это делает большие видео ненадёжными даже при наличии свободного накопителя.
+diff -ruN before/Vault-Exporter-Hardening-Review/README.md after/Vault-Exporter-Hardening-Review/README.md
+--- before/Vault-Exporter-Hardening-Review/README.md	2026-10-24 06:39:56.334081311 +0000
++++ after/Vault-Exporter-Hardening-Review/README.md	2026-10-24 06:39:56.343257975 +0000
+@@ -1,5 +1,8 @@
+ # Vault Exporter v0.9 — безопасное начало тестирования (исходники, НЕ APK)
+ 
++> **Security hardening update (2026-10-24):** в этой рабочей копии добавлена строгая независимая потоковая проверка архивов, включая SHA-256 и размер каждого медиа, уникальность/порядок сообщений, контроль манифеста. 32 синтетических фикстуры + 64 МиБ медиа при 32 МиБ памяти прошли. См. `VERIFIER_HARDENING_2026-10-24_RU.md`. Это НЕ Android-release и не проверка настоящего Telegram.
++
++
+ ## Что изменилось
+ 
+ **По умолчанию приложение собирается ТОЛЬКО для тестовых дата-центров Telegram** (`telegramEnvironment=test`). Эта сборка имеет отдельный Android package ID `org.vault.exporter.sandbox`; тестовая база и сеанс не смешиваются с production.
+diff -ruN before/Vault-Exporter-Hardening-Review/TEST_RUN_RU.txt after/Vault-Exporter-Hardening-Review/TEST_RUN_RU.txt
+--- before/Vault-Exporter-Hardening-Review/TEST_RUN_RU.txt	2026-10-24 06:39:56.334582588 +0000
++++ after/Vault-Exporter-Hardening-Review/TEST_RUN_RU.txt	2026-10-24 06:39:56.343514442 +0000
+@@ -1,16 +1,13 @@
+-TEST RUN — 2026-10-24 (JVM OpenJDK 21, offline)
+-BASELINE v0.9 SHA256: 6aa2c1c5805b6044b98a7182b5dcd3cbcd80683429cd1d916779463b047fcef5
+-HEAD private GitHub: c96f19d41da58ca78457caa6c9cdd7f694ba9afb
+-BEFORE FIX: MemoryAudit 48MiB file under -Xmx32m -> OutOfMemoryError (GCMDecrypt.doUpdate)
+-AFTER FIX: RunStagingBoundedMemoryTest -Xmx32m -> PASS 48MiB
+-RunStagingV2HardeningTests -> PASS 42 checks
+-RunHistoryCursorHardeningTests -> PASS 204083 checks / 100000 IDs / 2037 pages
+-RunCryptoTests -> PASS
+-RunResumeTests -> PASS
+-RunPipelineTests -> PASS
+-RunRateLimitTests -> PASS
+-scripts/security_gate.py -> PASS (static only)
+-scripts/preflight.py -> expected ABORT (official TDLib ARM64 library missing)
+-Full ExportEngine(fake TDLib) with NEW TVS2: NOT EXECUTED in this environment (no org.json JAR/Android runtime)
+-Actual Telegram: NOT TESTED; Android emulator/device: NOT TESTED; APK: NOT BUILT.
+-Existing ArchiveVerifier semantic consistency (invalid index SHA / message count): FAIL — VERIFIED GAP remains.
++Vault Exporter, offline only, 2026-10-24. java JVM; real Telegram account NEVER used.
++
++PASS: authenticated streaming, >3 blocks, password, tampering, truncation, ZIP entries, path filtering; bytes=788509
++PASS resume: restart, reuse, confidentiality, isolation, wrong key, tamper
++PASS pipeline: encrypted staging -> password archive -> verified media + messages
++PASS: Telegram rate-limit parser
++PASS 42 TVS2/JVM checks (boundaries, GCM authentication, replay, truncation, exact terminator, checkpoint, legacy)
++PASS 204083 checks: 100000 sparse IDs, 2037 short pages, duplicates/orders rejected
++PASS 32 verifier fixtures: complete archive + adversarial counts, ids, malformed JSON, tamper, path and missing file rejection
++PASS: streaming 48MiB media staging under JVM 32MiB heap
++PASS: independent SHA-256/length verification for 64 MiB media under JVM 32 MiB heap
++PASS: static manifest, backup and outbound-code safeguards (not a security audit)
++PASS: test DC default, production opt-in, separate app identities, no auto-connect
+diff -ruN before/Vault-Exporter-Hardening-Review/VERIFIER_HARDENING_2026-10-24_RU.md after/Vault-Exporter-Hardening-Review/VERIFIER_HARDENING_2026-10-24_RU.md
+--- before/Vault-Exporter-Hardening-Review/VERIFIER_HARDENING_2026-10-24_RU.md	1970-01-01 00:00:00.000000000 +0000
++++ after/Vault-Exporter-Hardening-Review/VERIFIER_HARDENING_2026-10-24_RU.md	2026-10-24 06:39:56.343601553 +0000
+@@ -0,0 +1,30 @@
++# Vault Exporter Android — устранён дефект семантической проверки архива
++
++**24 октября 2026 года. Только локальная рабочая копия; без Telegram-логина, без APK, без изменения `main`.**
++
++## Что исправлено
++
++В `ArchiveVerifier.java` независимый потоковый проверяющий механизм теперь, помимо аутентификации блоков TVA1 и CRC ZIP:
++
++1. Считывает страницы `messages/page-NNNNNN.jsonl` в порядке их формирования, проверяет корректность JSON, строго убывающие ID, отсутствие повторов между страницами. Сверяет фактическое количество сообщений с `manifest.json`.
++2. Проверяет индексы `media-index/page-NNNNNN.jsonl`: существование ID исходного сообщения, отсутствие дублирования вложений, корректность `file_id`/пути/числа байт/SHA-256.
++3. Читает каждый `media/...` потоково (буфер 64 КиБ), пересчитывает **фактический SHA-256 и размер** и отклоняет отсутствующие/лишние файлы и несовпадения. Сверяет количество медиа с манифестом.
++4. Не принимает `history_end_reached=false`, `media_missing>0`, незавершённый/подменённый манифест, неправильный тип чисел и булевых полей, дубли JSON-ключей верхнего уровня, нарушенную последовательность записей ZIP.
++5. Ограничивает одну JSONL-строку 2 МиБ (индекс — 128 КиБ), одну страницу — 1000 сообщений, манифест — 1 МиБ, участников — 16 МиБ. Это защитные пределы; если реальные JSONL превысят их, в первую очередь нужно изучить соответствующий экземпляр, а не отключать лимиты.
++
++**Нужно помнить:** совпадение с внутренним манифестом НЕ доказывает, что Telegram отдал всю историю, в том числе удалённые, недоступные или ограниченные сообщения. Это отдельная проверка сервера/TDLib.
++
++## Что реально испытано
++
++- `tests/RUN_TESTS_OFFLINE.sh`: **PASS**, включая исходные crypto, resume, pipeline, rate limit, TVS2 и cursor тесты.
++- `RunSemanticArchiveVerifierTests`: **PASS 32 фикстуры** (1 положительная + 31 отрицательная: ложный хеш/размер/количество, пропуски, дубли, неправильный тип JSON, некорректный путь, неизвестная схема и т.д.).
++- Исходный `TestManifestIntegrityGap`, который раньше выдавал `VERIFIED GAP`, теперь останавливается с `IOException` из-за расхождения `bytes` и `sha256`. Это ожидаемое предотвращение дефекта.
++- `RunVerifierBoundedMemoryTest`: **PASS**, 64 МиБ синтетического медиа, проверка по SHA-256 и размеру при `java -Xmx32m`. Создание входного файла и запись TVA тоже прошли в этом ограничении.
++- Старый `RunStagingBoundedMemoryTest`: **PASS**, 48 МиБ TVS2 при 32 МиБ heap.
++- **НЕТ** новых фактических проверок Android APK, официальный `libtdjson.so` не установлен, настоящие сообщения и аккаунты Telegram не использовались. Новая CI-конфигурация подготовлена, но GitHub Actions для неё пока не запускался.
++
++## Следующий блокер
++
++Проверить **действующий `ExportEngine` с настоящим `ResumeStore` (TVS2) и fake TDLib** в сквозной JVM-интеграции, включая kill/restart во время финализации и ошибку загрузки медиа. Для этого нужен JVM-совместимый `org.json` (Android использует встроенный), либо CI с Maven доступом. Исторический успешный CI на GitHub проверял исходный `ExportEngine` с другой реализацией staging; новую комбинацию ещё не подтвердили.
++
++После этого — независимый аудит реальной TDLib, Android SDK/NDK, Android runtime в изолированном test DC; работа основного Telegram-аккаунта запрещена до обоснованного согласия и независимой проверки безопасности.
+diff -ruN before/Vault-Exporter-Hardening-Review/app/src/main/java/org/vault/exporter/ArchiveVerifier.java after/Vault-Exporter-Hardening-Review/app/src/main/java/org/vault/exporter/ArchiveVerifier.java
+--- before/Vault-Exporter-Hardening-Review/app/src/main/java/org/vault/exporter/ArchiveVerifier.java	2026-10-24 06:39:56.336167460 +0000
++++ after/Vault-Exporter-Hardening-Review/app/src/main/java/org/vault/exporter/ArchiveVerifier.java	2026-10-24 06:39:56.344602775 +0000
+@@ -1,41 +1,240 @@
+ package org.vault.exporter;
+ 
+ import java.io.*;
++import java.nio.ByteBuffer;
++import java.nio.charset.CharacterCodingException;
++import java.nio.charset.StandardCharsets;
++import java.nio.charset.CodingErrorAction;
++import java.security.MessageDigest;
++import java.util.*;
+ import java.util.zip.ZipEntry;
+ import java.util.zip.ZipInputStream;
+ 
++/**
++ * Independent streaming audit of the TVA1 archive's authenticated plaintext.
++ * Memory use is bounded by one JSON line, one TDLib message page, and a hash buffer;
++ * media files are never materialized in memory. In addition to AEAD/ZIP integrity,
++ * checks exact message counts, strictly decreasing IDs, media references and bytes.
++ * This checks INTERNAL consistency, not completeness of Telegram's cloud history.
++ */
+ public final class ArchiveVerifier {
+-  public static int verify(InputStream input, char[] password) throws Exception {
+-    ChunkedVault.Decrypt decrypted = new ChunkedVault.Decrypt(input, password);
+-    int entries = 0;
+-    boolean manifestSeen = false;
+-    try (ZipInputStream zip = new ZipInputStream(decrypted)) {
+-      ZipEntry entry;
+-      byte[] buf = new byte[65536];
+-      while ((entry = zip.getNextEntry()) != null) {
+-        ArchiveWriter.validate(entry.getName());
+-        if (++entries > 20000000) throw new IOException("Слишком много элементов");
+-        if ("manifest.json".equals(entry.getName())) {
+-          if(manifestSeen) throw new IOException("Повторный манифест");
+-          manifestSeen = true;
+-          ByteArrayOutputStream manifest=new ByteArrayOutputStream();
+-          int n;
+-          while((n=zip.read(buf))!=-1) {
+-            if(manifest.size()+n>1024*1024) throw new IOException("Манифест слишком большой");
+-            manifest.write(buf,0,n);
+-          }
+-          String content = manifest.toString("UTF-8");
+-          if (!content.matches("(?s).*\"schema\"\\s*:\\s*\"tg-vault-v1\".*"))
+-            throw new IOException("Неизвестная схема архива");
+-        } else {
+-          while (zip.read(buf) != -1) { /* exhaust and verify ZIP CRC */ }
++  private ArchiveVerifier() {}
++  private static final int MAX_MESSAGE_LINE=2*1024*1024;
++  private static final int MAX_INDEX_LINE=128*1024;
++  private static final int MAX_PAGE_ROWS=1000;
++  private static final int MAX_MANIFEST_BYTES=1024*1024;
++  private static final int MAX_PARTICIPANTS_BYTES=16*1024*1024;
++
++  /** Strict, small JSON parser: exposes typed top-level scalars, validates nested content. */
++  private static final class Scalar {
++    final String text; final char type;
++    Scalar(String text,char type){this.text=text;this.type=type;}
++  }
++  private static final class Json {
++    final String s; int pos;
++    Json(String raw){s=raw;}
++    void ws(){while(pos<s.length() && (s.charAt(pos)==' '||s.charAt(pos)=='\n'||s.charAt(pos)=='\t'||s.charAt(pos)=='\r'))pos++;}
++    IOException fail(){return new IOException("Некорректная JSON-строка в архиве");}
++    void want(char c)throws IOException {ws();if(pos==s.length()||s.charAt(pos++)!=c)throw fail();}
++    String string()throws IOException {
++      ws();if(pos==s.length()||s.charAt(pos++)!='"')throw fail();
++      StringBuilder b=new StringBuilder();
++      while(pos<s.length()){
++        char c=s.charAt(pos++);
++        if(c=='"')return b.toString();
++        if(c<' ')throw fail();
++        if(c!='\\'){b.append(c);continue;}
++        if(pos>=s.length())throw fail();
++        char escape=s.charAt(pos++);
++        switch(escape){
++          case '"':case '\\':case '/':b.append(escape);break;
++          case 'b':b.append('\b');break;case 'f':b.append('\f');break;
++          case 'n':b.append('\n');break;case 'r':b.append('\r');break;case 't':b.append('\t');break;
++          case 'u':
++            if(pos+4>s.length())throw fail();
++            try {b.append((char)Integer.parseInt(s.substring(pos,pos+4),16));}
++            catch(NumberFormatException e){throw fail();}
++            pos+=4;break;
++          default:throw fail();
++        }
++      }
++      throw fail();
++    }
++    Scalar value(int depth)throws IOException {
++      if(depth>64)throw fail();
++      ws();if(pos>=s.length())throw fail();
++      char c=s.charAt(pos);
++      if(c=='"')return new Scalar(string(),'s');
++      if(c=='{'||c=='['){
++        pos++;char end=c=='{'?'}':']';ws();
++        if(pos<s.length()&&s.charAt(pos)==end){pos++;return new Scalar(null,'o');}
++        do {
++          if(c=='{'){string();want(':');}
++          value(depth+1);ws();
++          if(pos>=s.length())throw fail();
++          char sep=s.charAt(pos++);
++          if(sep==end)return new Scalar(null,'o');
++          if(sep!=',')throw fail();
++        }while(true);
++      }
++      int begin=pos;
++      if(s.startsWith("true",pos)){pos+=4;return new Scalar("true",'b');}
++      if(s.startsWith("false",pos)){pos+=5;return new Scalar("false",'b');}
++      if(s.startsWith("null",pos)){pos+=4;return new Scalar(null,'0');}
++      if(c=='-')pos++;
++      if(pos>=s.length())throw fail();
++      if(s.charAt(pos)=='0')pos++;
++      else {if(s.charAt(pos)<'1'||s.charAt(pos)>'9')throw fail();
++        while(pos<s.length()&&s.charAt(pos)>='0'&&s.charAt(pos)<='9')pos++;}
++      if(pos<s.length()&&s.charAt(pos)=='.'){
++        pos++;int at=pos;
++        while(pos<s.length()&&s.charAt(pos)>='0'&&s.charAt(pos)<='9')pos++;
++        if(at==pos)throw fail();
++      }
++      if(pos<s.length()&&(s.charAt(pos)=='e'||s.charAt(pos)=='E')){
++        pos++;if(pos<s.length()&&(s.charAt(pos)=='+'||s.charAt(pos)=='-'))pos++;
++        int at=pos;while(pos<s.length()&&s.charAt(pos)>='0'&&s.charAt(pos)<='9')pos++;
++        if(at==pos)throw fail();
++      }
++      return new Scalar(s.substring(begin,pos),'n');
++    }
++    Map<String,Scalar> fields()throws IOException {
++      LinkedHashMap<String,Scalar> values=new LinkedHashMap<>();
++      want('{');ws();
++      if(pos<s.length()&&s.charAt(pos)=='}'){pos++;ws();if(pos!=s.length())throw fail();return values;}
++      do {
++        String key=string();want(':');Scalar val=value(0);
++        if(values.containsKey(key))throw new IOException("Повторное JSON-поле: "+key);
++        values.put(key,val);ws();
++        if(pos>=s.length())throw fail();
++        char sep=s.charAt(pos++);
++        if(sep=='}'){ws();if(pos!=s.length())throw fail();return values;}
++        if(sep!=',')throw fail();
++      }while(true);
++    }
++  }
++  private static Scalar required(Map<String,Scalar> obj,String key,char type)throws IOException {
++    Scalar v=obj.get(key);
++    if(v==null || v.type!=type)throw new IOException("Отсутствует или имеет неверный тип поле: "+key);
++    return v;
++  }
++  private static String str(Map<String,Scalar> obj,String key)throws IOException {
++    return required(obj,key,'s').text;
++  }
++  private static long number(Map<String,Scalar> obj,String key,long min,long max)throws IOException {
++    String v=required(obj,key,'n').text;
++    if(!v.matches("-?(0|[1-9][0-9]*)"))throw new IOException("Некорректное число: "+key);
++    try {long n=Long.parseLong(v);if(n>=min&&n<=max)return n;}
++    catch(NumberFormatException ignored){}
++    throw new IOException("Число вне допустимого диапазона: "+key);
++  }
++  private static String decode(byte[] bytes)throws IOException {
++    try{return StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
++      .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();}
++    catch(CharacterCodingException e){throw new IOException("Неверная кодировка UTF-8",e);}
++  }
++  private static final class Lines {
++    final InputStream in;final int max;
++    final byte[] buffer=new byte[8192];int pos,limit;
++    Lines(InputStream in,int max){this.in=in;this.max=max;}
++    String next()throws IOException {
++      ByteArrayOutputStream out=new ByteArrayOutputStream();
++      while(true){
++        if(pos==limit){limit=in.read(buffer);pos=0;
++          if(limit<0)return out.size()==0?null:decode(out.toByteArray());}
++        int begin=pos;
++        while(pos<limit&&buffer[pos]!='\n')pos++;
++        int length=pos-begin;
++        if(out.size()+length>max)throw new IOException("Слишком длинная JSONL-строка");
++        out.write(buffer,begin,length);
++        if(pos<limit){pos++;return decode(out.toByteArray());}
++      }
++    }
++  }
++  private static final class Media {
++    final long id;final String path,sha;final long bytes;
++    Media(long id,String path,String sha,long bytes){this.id=id;this.path=path;this.sha=sha;this.bytes=bytes;}
++  }
++  private static long[] stats(ZipInputStream zip,MessageDigest digest)throws IOException {
++    byte[] buf=new byte[65536];long nbytes=0;int n;
++    digest.reset();
++    while((n=zip.read(buf))!=-1){nbytes+=n;digest.update(buf,0,n);}
++    return new long[]{nbytes};
++  }
++  private static String hex(byte[] bytes){StringBuilder out=new StringBuilder(bytes.length*2);
++    for(byte b:bytes)out.append(Character.forDigit((b>>>4)&15,16)).append(Character.forDigit(b&15,16));
++    return out.toString();}
++  private static int consumeBounded(ZipInputStream zip,int max)throws IOException {
++    int total=0,read;byte[] buf=new byte[8192];
++    while((read=zip.read(buf))!=-1){total+=read;if(total>max)throw new IOException("Служебная запись слишком велика");}
++    return total;
++  }
++  private static Map<String,Scalar> readManifest(ZipInputStream zip)throws IOException {
++    ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;
++    while((n=zip.read(buf))!=-1){if(out.size()+n>MAX_MANIFEST_BYTES)throw new IOException("Манифест слишком большой");out.write(buf,0,n);}
++    return new Json(decode(out.toByteArray())).fields();
++  }
++  private static String page(String dir,int p){return String.format(Locale.ROOT,dir+"/page-%06d.jsonl",p);}
++  public static int verify(InputStream input,char[] password)throws Exception {
++    ChunkedVault.Decrypt decrypted=new ChunkedVault.Decrypt(input,password);
++    int entries=0,pages=0;long messages=0,media=0,previousId=Long.MAX_VALUE;
++    MessageDigest digest=MessageDigest.getInstance("SHA-256");
++    try(ZipInputStream zip=new ZipInputStream(decrypted)){
++      ZipEntry e=zip.getNextEntry();
++      while(e!=null&&e.getName().startsWith("messages/")){
++        if(pages==999999)throw new IOException("Слишком много страниц");
++        pages++;
++        if(!e.getName().equals(page("messages",pages)))throw new IOException("Пропущена или неверно названа страница сообщений");
++        HashSet<Long> pageIds=new HashSet<>();
++        Lines rows=new Lines(zip,MAX_MESSAGE_LINE);String line;
++        while((line=rows.next())!=null){
++          Map<String,Scalar> fields=new Json(line).fields();
++          long id=number(fields,"id",1,Long.MAX_VALUE);
++          if(id>=previousId||!pageIds.add(id))throw new IOException("Повтор или неправильный порядок ID сообщения: "+id);
++          if(pageIds.size()>MAX_PAGE_ROWS)throw new IOException("Слишком много сообщений на странице");
++          previousId=id;messages++;
++        }
++        if(pageIds.isEmpty())throw new IOException("Пустая страница сообщений");
++        entries++;zip.closeEntry();
++        e=zip.getNextEntry();
++        if(e==null||!e.getName().equals(page("media-index",pages)))throw new IOException("Нет индекса медиа для страницы "+pages);
++        LinkedHashMap<String,Media> referenced=new LinkedHashMap<>();HashSet<Long> usedIds=new HashSet<>();
++        rows=new Lines(zip,MAX_INDEX_LINE);
++        while((line=rows.next())!=null){
++          Map<String,Scalar> fields=new Json(line).fields();
++          long msgId=number(fields,"message_id",1,Long.MAX_VALUE);
++          long fileId=number(fields,"file_id",1,Integer.MAX_VALUE);
++          long length=number(fields,"bytes",0,Long.MAX_VALUE);
++          String path=str(fields,"path"),sha=str(fields,"sha256");
++          if(!pageIds.contains(msgId)||!usedIds.add(msgId))throw new IOException("Повтор или чужое медиа: "+msgId);
++          if(!path.matches("media/"+msgId+"/"+fileId+"\\.[a-z0-9]{1,8}"))throw new IOException("Неверный путь медиа: "+path);
++          if(!sha.matches("[a-f0-9]{64}"))throw new IOException("Некорректный SHA-256 медиа");
++          if(referenced.put(path,new Media(msgId,path,sha,length))!=null)throw new IOException("Повторное имя медиа: "+path);
++        }
++        entries++;zip.closeEntry();
++        for(Media expected:referenced.values()){
++          e=zip.getNextEntry();
++          if(e==null||!e.getName().equals(expected.path))throw new IOException("Отсутствует медиа: "+expected.path);
++          long size=stats(zip,digest)[0];
++          if(size!=expected.bytes||!hex(digest.digest()).equals(expected.sha))throw new IOException("Медиа не совпадает с индексом: "+expected.path);
++          media++;entries++;zip.closeEntry();
+         }
+-        zip.closeEntry();
++        e=zip.getNextEntry();
+       }
+-      // ZipInputStream may stop at the central directory; force reading final AEAD chunk/tag.
+-      while (decrypted.read(buf) != -1) { /* authenticate the encrypted suffix */ }
++      if(e==null||!"participants.json".equals(e.getName()))throw new IOException("Нет participants.json либо неожиданные записи");
++      consumeBounded(zip,MAX_PARTICIPANTS_BYTES);entries++;zip.closeEntry();
++      e=zip.getNextEntry();
++      if(e==null||!"manifest.json".equals(e.getName()))throw new IOException("Манифест отсутствует или не последняя запись");
++      Map<String,Scalar> manifest=readManifest(zip);entries++;zip.closeEntry();
++      if(!"tg-vault-v1".equals(str(manifest,"schema")))throw new IOException("Неизвестная схема архива");
++      if(!"true".equals(required(manifest,"history_end_reached",'b').text))throw new IOException("История не завершена");
++      if(number(manifest,"media_missing",0,Long.MAX_VALUE)!=0)throw new IOException("В архиве пропущены медиа");
++      if(number(manifest,"messages",0,Long.MAX_VALUE)!=messages)throw new IOException("Число сообщений не совпадает с манифестом");
++      if(number(manifest,"media_downloaded",0,Long.MAX_VALUE)!=media)throw new IOException("Число медиа не совпадает с манифестом");
++      if(zip.getNextEntry()!=null)throw new IOException("Лишние записи после манифеста");
++      byte[] buf=new byte[65536];
++      while(decrypted.read(buf)!=-1) {/* authenticate final encrypted block */}
+     }
+-    if (!manifestSeen) throw new IOException("Экспорт прерван: отсутствует manifest.json");
+     return entries;
+   }
+ }
+diff -ruN before/Vault-Exporter-Hardening-Review/tests/RUN_TESTS_OFFLINE.sh after/Vault-Exporter-Hardening-Review/tests/RUN_TESTS_OFFLINE.sh
+--- before/Vault-Exporter-Hardening-Review/tests/RUN_TESTS_OFFLINE.sh	2026-10-24 06:39:56.339875398 +0000
++++ after/Vault-Exporter-Hardening-Review/tests/RUN_TESTS_OFFLINE.sh	2026-10-24 06:39:56.348137671 +0000
+@@ -5,9 +5,10 @@
+ ROOT=app/src/main/java/org/vault/exporter
+ javac -d build/test-classes \
+   "$ROOT"/{HistoryCursor,StagingCipher,ChunkedVault,ResumeStore,ArchiveWriter,ArchiveVerifier,TelegramRateLimit}.java \
+-  tests/{RunCryptoTests,RunResumeTests,RunPipelineTests,RunRateLimitTests,RunStagingV2HardeningTests,RunHistoryCursorHardeningTests,RunStagingBoundedMemoryTest}.java
+-for cls in RunCryptoTests RunResumeTests RunPipelineTests RunRateLimitTests RunStagingV2HardeningTests RunHistoryCursorHardeningTests; do
++  tests/{RunCryptoTests,RunResumeTests,RunPipelineTests,RunRateLimitTests,RunStagingV2HardeningTests,RunHistoryCursorHardeningTests,RunStagingBoundedMemoryTest,RunSemanticArchiveVerifierTests,RunVerifierBoundedMemoryTest}.java
++for cls in RunCryptoTests RunResumeTests RunPipelineTests RunRateLimitTests RunStagingV2HardeningTests RunHistoryCursorHardeningTests RunSemanticArchiveVerifierTests; do
+   java -Xmx64m -cp build/test-classes "$cls"
+ done
+ java -Xmx32m -cp build/test-classes RunStagingBoundedMemoryTest
++java -Xmx32m -cp build/test-classes RunVerifierBoundedMemoryTest
+ python3 scripts/security_gate.py
+diff -ruN before/Vault-Exporter-Hardening-Review/tests/RunCryptoTests.java after/Vault-Exporter-Hardening-Review/tests/RunCryptoTests.java
+--- before/Vault-Exporter-Hardening-Review/tests/RunCryptoTests.java	2026-10-24 06:39:56.340038314 +0000
++++ after/Vault-Exporter-Hardening-Review/tests/RunCryptoTests.java	2026-10-24 06:39:56.348221307 +0000
+@@ -19,13 +19,20 @@
+     char[] pw="test long development password 9".toCharArray();
+     try(ArchiveWriter archive=new ArchiveWriter(buffer,pw)) {
+       archive.writeBytes("messages/page-000001.jsonl","{\"id\":1,\"text\":\"мяу\"}\n".getBytes(StandardCharsets.UTF_8));
++      java.security.MessageDigest sha=java.security.MessageDigest.getInstance("SHA-256");
++      byte[] fingerprint=sha.digest(big);
++      StringBuilder expected=new StringBuilder();
++      for(byte b:fingerprint)expected.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
++      String index="{\"message_id\":1,\"file_id\":100,\"path\":\"media/1/100.bin\",\"sha256\":\""+expected+"\",\"bytes\":"+big.length+"}\n";
++      archive.writeBytes("media-index/page-000001.jsonl",index.getBytes(StandardCharsets.UTF_8));
+       String digest=archive.writeMedia("media/1/100.bin",sample);
+       yes(digest.matches("[a-f0-9]{64}"),"SHA-256 hex");
+-      archive.writeBytes("manifest.json", "{\"schema\":\"tg-vault-v1\"}".getBytes(StandardCharsets.UTF_8));
++      archive.writeBytes("participants.json","[]".getBytes(StandardCharsets.UTF_8));
++      archive.writeBytes("manifest.json", "{\"schema\":\"tg-vault-v1\",\"messages\":1,\"media_downloaded\":1,\"media_missing\":0,\"history_end_reached\":true}".getBytes(StandardCharsets.UTF_8));
+     }
+     byte[] original=buffer.toByteArray();
+     int n=ArchiveVerifier.verify(new ByteArrayInputStream(original), pw);
+-    yes(n==3,"Expected 3 zip entries, got "+n);
++    yes(n==5,"Expected 5 zip entries, got "+n);
+     rejects(original,"not the password");
+     for(int pos : new int[]{0,18,35,40,original.length/2,original.length-17,original.length-1}) {
+       byte[] corrupt=original.clone(); corrupt[pos]^=(byte)0x32;
+diff -ruN before/Vault-Exporter-Hardening-Review/tests/RunPipelineTests.java after/Vault-Exporter-Hardening-Review/tests/RunPipelineTests.java
+--- before/Vault-Exporter-Hardening-Review/tests/RunPipelineTests.java	2026-10-24 06:39:56.340189001 +0000
++++ after/Vault-Exporter-Hardening-Review/tests/RunPipelineTests.java	2026-10-24 06:39:56.348350042 +0000
+@@ -25,7 +25,7 @@
+     String mediaIndex="";
+     try(ResumeStore stage=new ResumeStore(new File(home,"private"),700,key)){
+       ResumeStore.Media md=stage.saveMedia(123,8,mediaFile);
+-      mediaIndex="{\"message_id\":123,\"file_id\":8,\"path\":\"media/123/8.jpg\",\"sha256\":\""+md.sha256+"\"}\n";
++      mediaIndex="{\"message_id\":123,\"file_id\":8,\"path\":\"media/123/8.jpg\",\"sha256\":\""+md.sha256+"\",\"bytes\":"+md.bytes+"}\n";
+       stage.putPage(1,message.getBytes(StandardCharsets.UTF_8),mediaIndex.getBytes(StandardCharsets.UTF_8));
+       stage.checkpoint(new ResumeStore.State(700,123,1,1,1,true));
+     }
+@@ -36,9 +36,10 @@
+       archive.writeStream("messages/page-000001.jsonl",resumed.openPage(1));
+       archive.writeStream("media-index/page-000001.jsonl",resumed.openIndex(1));
+       archive.writeStream("media/123/8.jpg",resumed.openMedia(123,8));
+-      archive.writeBytes("manifest.json","{\"schema\":\"tg-vault-v1\",\"messages\":1}".getBytes(StandardCharsets.UTF_8));
++      archive.writeBytes("participants.json","[]".getBytes(StandardCharsets.UTF_8));
++      archive.writeBytes("manifest.json","{\"schema\":\"tg-vault-v1\",\"messages\":1,\"media_downloaded\":1,\"media_missing\":0,\"history_end_reached\":true}".getBytes(StandardCharsets.UTF_8));
+     }
+-    try(InputStream in=new FileInputStream(outputFile)){yes(ArchiveVerifier.verify(in,pass)==4,"archive integrity");}
++    try(InputStream in=new FileInputStream(outputFile)){yes(ArchiveVerifier.verify(in,pass)==5,"archive integrity");}
+     boolean seenMessage=false,seenImage=false;
+     try(ZipInputStream z=new ZipInputStream(new ChunkedVault.Decrypt(new FileInputStream(outputFile),pass))){
+       ZipEntry entry;
+diff -ruN before/Vault-Exporter-Hardening-Review/tests/RunSemanticArchiveVerifierTests.java after/Vault-Exporter-Hardening-Review/tests/RunSemanticArchiveVerifierTests.java
+--- before/Vault-Exporter-Hardening-Review/tests/RunSemanticArchiveVerifierTests.java	1970-01-01 00:00:00.000000000 +0000
++++ after/Vault-Exporter-Hardening-Review/tests/RunSemanticArchiveVerifierTests.java	2026-10-24 06:39:56.348590925 +0000
+@@ -0,0 +1,95 @@
++import org.vault.exporter.*;
++import java.io.*;
++import java.nio.charset.StandardCharsets;
++import java.security.MessageDigest;
++import java.util.*;
++
++/** Adversarial, independent audit of internally inconsistent encrypted TVA fixtures. */
++public final class RunSemanticArchiveVerifierTests {
++  static final char[] PASS="offline-semantic-audit-2026".toCharArray();
++  static final byte[] PHOTO={1,2,3,4,5,6,7};
++  static final byte[] CIRCLE={0,0,0,16,102,116,121,112,1,2,3,4};
++  static int cases=0;
++  static String sha(byte[] input)throws Exception {
++    byte[] digest=MessageDigest.getInstance("SHA-256").digest(input);
++    StringBuilder result=new StringBuilder();
++    for(byte b:digest)result.append(String.format(Locale.ROOT,"%02x",b&255));
++    return result.toString();
++  }
++  static String index(long message,int file,String ext,byte[] bytes)throws Exception{
++    return "{\"message_id\":"+message+",\"file_id\":"+file+",\"category\":\"video\",\"path\":\"media/"+message+"/"+file+ext+"\",\"sha256\":\""+sha(bytes)+"\",\"bytes\":"+bytes.length+"}\n";
++  }
++  static String manifest(int messages,int media){return "{\"schema\":\"tg-vault-v1\",\"messages\":"+messages+",\"media_downloaded\":"+media+",\"media_missing\":0,\"history_end_reached\":true}";}
++  static final class Entry {String name;byte[] data;Entry(String n,byte[] d){name=n;data=d;}}
++  static Entry e(String name,String body){return new Entry(name,body.getBytes(StandardCharsets.UTF_8));}
++  static Entry e(String name,byte[] body){return new Entry(name,body);}
++  static ArrayList<Entry> fixture()throws Exception {
++    ArrayList<Entry> data=new ArrayList<>();
++    data.add(e("messages/page-000001.jsonl","{\"id\":100,\"text\":\"escapes: \\\" quote and nested\",\"content\":{\"text\":{\"text\":\"Hi\"}}}\n{\"id\":90}\n"));
++    data.add(e("media-index/page-000001.jsonl",index(100,501,".jpg",PHOTO)));
++    data.add(e("media/100/501.jpg",PHOTO));
++    data.add(e("messages/page-000002.jsonl","{\"id\":70}\n"));
++    data.add(e("media-index/page-000002.jsonl",index(70,502,".mp4",CIRCLE)));
++    data.add(e("media/70/502.mp4",CIRCLE));
++    data.add(e("participants.json","[]"));
++    data.add(e("manifest.json",manifest(3,2)));
++    return data;
++  }
++  static byte[] build(List<Entry> entries)throws Exception{
++    ByteArrayOutputStream output=new ByteArrayOutputStream();
++    try(ArchiveWriter archive=new ArchiveWriter(output,PASS)){
++      for(Entry entry:entries)archive.writeBytes(entry.name,entry.data);
++    }
++    return output.toByteArray();
++  }
++  static void pass(List<Entry> fixture,int expected)throws Exception{
++    int count=ArchiveVerifier.verify(new ByteArrayInputStream(build(fixture)),PASS);
++    if(count!=expected)throw new AssertionError("Entry count mismatch "+count);
++    cases++;
++  }
++  static void reject(List<Entry> entries,String why)throws Exception {
++    try {ArchiveVerifier.verify(new ByteArrayInputStream(build(entries)),PASS);}
++    catch(IOException expected){cases++;return;}
++    throw new AssertionError("SEMANTIC CORRUPTION ACCEPTED: "+why);
++  }
++  static void change(List<Entry> fixture,int pos,String body){fixture.set(pos,e(fixture.get(pos).name,body));}
++  static void testCorruption()throws Exception {
++    ArrayList<Entry> good=fixture();pass(good,8);
++    ArrayList<Entry> a;
++    a=fixture();change(a,7,manifest(300,2));reject(a,"inflated message count");
++    a=fixture();change(a,7,manifest(3,200));reject(a,"inflated media count");
++    a=fixture();change(a,7,manifest(2,2));reject(a,"missing message count");
++    a=fixture();change(a,7,manifest(3,1));reject(a,"missing media count");
++    a=fixture();change(a,7,manifest(3,2).replace("\"media_missing\":0","\"media_missing\":1"));reject(a,"missing media");
++    a=fixture();change(a,7,manifest(3,2).replace("true","false"));reject(a,"unfinished history");
++    a=fixture();change(a,7,manifest(3,2).replace("\"messages\":3","\"messages\":\"3\""));reject(a,"numeric string counts");
++    a=fixture();change(a,7,manifest(3,2).replace("true","\"true\""));reject(a,"boolean string");
++    a=fixture();change(a,7,manifest(3,2).replace("tg-vault-v1","another-schema"));reject(a,"unknown schema");
++    a=fixture();change(a,7,manifest(3,2).replace("\"messages\":3","\"messages\":3,\"messages\":3"));reject(a,"duplicate JSON manifest key");
++    a=fixture();change(a,1,index(100,501,".jpg",PHOTO).replace(sha(PHOTO),"0".repeat(64)));reject(a,"false media hash");
++    a=fixture();change(a,1,index(100,501,".jpg",PHOTO).replace("\"bytes\":7","\"bytes\":999999"));reject(a,"false size");
++    a=fixture();a.set(2,e("media/100/501.jpg",new byte[]{9,9,9,9,9,9,9}));reject(a,"modified media bytes");
++    a=fixture();a.remove(2);reject(a,"missing media payload");
++    a=fixture();a.add(3,e("media/100/999.mp4",PHOTO));reject(a,"unreferenced media payload");
++    a=fixture();change(a,1,index(123456,501,".jpg",PHOTO));reject(a,"orphan message ref");
++    a=fixture();change(a,1,index(100,501,".jpg",PHOTO)+index(100,501,".jpg",PHOTO));reject(a,"duplicate media index row");
++    a=fixture();change(a,0,"{\"id\":100}\n{\"id\":100}\n");reject(a,"duplicate message ID on page");
++    a=fixture();change(a,3,"{\"id\":90}\n");reject(a,"duplicate message ID across pages");
++    a=fixture();change(a,3,"{\"id\":110}\n");reject(a,"ascending message ID across pages");
++    a=fixture();change(a,0,"{\"id\":\"100\"}\n{\"id\":90}\n");reject(a,"string message IDs");
++    a=fixture();change(a,0,"{\"id\":100,\"id\":100}\n{\"id\":90}\n");reject(a,"duplicate JSON message id key");
++    a=fixture();change(a,0,"{\"id\":100,}\n{\"id\":90}\n");reject(a,"bad JSON");
++    a=fixture();change(a,0,"{\"id\":100}\n".repeat(2001));reject(a,"unbounded page count");
++    a=fixture();a.set(3,e("messages/page-000003.jsonl","{\"id\":70}\n"));reject(a,"missing page numbering");
++    a=fixture();a.remove(6);reject(a,"missing participants");
++    a=fixture();a.add(e("extra.txt","hello"));reject(a,"unexpected file after manifest");
++    a=fixture();change(a,1,index(100,501,".jpg",PHOTO).replace("media/100/501.jpg","media/../../evil.jpg"));reject(a,"path traversal");
++    a=fixture();change(a,1,index(100,501,".jpg",PHOTO).replace("\"sha256\"","\"digest\""));reject(a,"missing SHA256");
++    a=fixture();change(a,1,index(100,501,".jpg",PHOTO).replace("\"bytes\":7","\"bytes\":\"7\""));reject(a,"string length field");
++    a=fixture();change(a,0,"{\"id\":100}\n{\"id\":90,\"text\":\""+"x".repeat(2*1024*1024)+"\"}\n");reject(a,"oversized JSONL row");
++  }
++  public static void main(String[] args)throws Exception {
++    testCorruption();
++    System.out.println("PASS "+cases+" verifier fixtures: complete archive + adversarial counts, ids, malformed JSON, tamper, path and missing file rejection");
++  }
++}
+diff -ruN before/Vault-Exporter-Hardening-Review/tests/RunVerifierBoundedMemoryTest.java after/Vault-Exporter-Hardening-Review/tests/RunVerifierBoundedMemoryTest.java
+--- before/Vault-Exporter-Hardening-Review/tests/RunVerifierBoundedMemoryTest.java	1970-01-01 00:00:00.000000000 +0000
++++ after/Vault-Exporter-Hardening-Review/tests/RunVerifierBoundedMemoryTest.java	2026-10-24 06:39:56.348989848 +0000
+@@ -0,0 +1,37 @@
++import org.vault.exporter.*;
++import java.io.*;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.*;
++import java.security.MessageDigest;
++import java.util.*;
++
++/** Separate VM execution with -Xmx32m; neither encoder nor verifier may read all media into heap. */
++public final class RunVerifierBoundedMemoryTest {
++  static String hex(byte[] bytes){StringBuilder sb=new StringBuilder();for(byte b:bytes)sb.append(String.format(Locale.ROOT,"%02x",b&255));return sb.toString();}
++  public static void main(String[] args)throws Exception{
++    Path dir=Files.createTempDirectory("vault-verifier-limited-heap-");
++    Path media=dir.resolve("synthetic.bin"),archiveFile=dir.resolve("synthetic.tva");
++    final long size=64L*1024*1024;
++    byte[] buf=new byte[65536];Random rnd=new Random(1777);
++    MessageDigest hash=MessageDigest.getInstance("SHA-256");
++    try(OutputStream out=Files.newOutputStream(media)){
++      for(long written=0;written<size;written+=buf.length){rnd.nextBytes(buf);out.write(buf);hash.update(buf);}
++    }
++    String sha=hex(hash.digest());char[] pass="synthetic-verifier-low-heap-2026".toCharArray();
++    try(OutputStream target=Files.newOutputStream(archiveFile); ArchiveWriter writer=new ArchiveWriter(target,pass)){
++      writer.writeBytes("messages/page-000001.jsonl","{\"id\":7654321}\n".getBytes(StandardCharsets.UTF_8));
++      String index="{\"message_id\":7654321,\"file_id\":17,\"path\":\"media/7654321/17.bin\",\"bytes\":"+size+",\"sha256\":\""+sha+"\"}\n";
++      writer.writeBytes("media-index/page-000001.jsonl",index.getBytes(StandardCharsets.UTF_8));
++      String savedSha=writer.writeMedia("media/7654321/17.bin",media.toFile());
++      if(!sha.equals(savedSha))throw new AssertionError("Writer fingerprint incorrect");
++      writer.writeBytes("participants.json","[]".getBytes(StandardCharsets.UTF_8));
++      writer.writeBytes("manifest.json","{\"schema\":\"tg-vault-v1\",\"messages\":1,\"media_downloaded\":1,\"media_missing\":0,\"history_end_reached\":true}".getBytes(StandardCharsets.UTF_8));
++    }
++    try(InputStream encrypted=Files.newInputStream(archiveFile)){
++      int n=ArchiveVerifier.verify(encrypted,pass);
++      if(n!=5)throw new AssertionError("Verified incorrect number of files: "+n);
++    }
++    System.out.println("PASS: independent SHA-256/length verification for 64 MiB media under JVM 32 MiB heap");
++    Files.delete(media);Files.delete(archiveFile);Files.delete(dir);
++  }
++}
