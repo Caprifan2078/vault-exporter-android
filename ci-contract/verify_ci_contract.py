@@ -33,7 +33,7 @@ assert "TELEGRAM_API_ID" not in build and "TELEGRAM_API_HASH" not in build, "Off
 assert "secrets.TELEGRAM_API_ID" in network and "secrets.TELEGRAM_API_HASH" in network, "Manual test build missing scoped credentials"
 assert "workflow_dispatch" in network, "Test network build requires manual path"
 assert "actions/upload-artifact" in network, "Private quarantined output missing"
-assert "AndroidManifest.xml" in read("tests/RUN_BUILD_SAFETY_TESTS.py"), "Manifest tests missing"
+assert "AndroidManifest.xml" in read("scripts/security_gate.py"), "Static Android manifest gate missing"
 assert "tools:node=\"remove\"" in debug_manifest, "Offline debug build may have INTERNET permission"
 assert "assembleSandboxDc" in build and network, "Explicit sandboxDc build missing"
 assert "productionApproved" in gradle and "approveProductionBuild" in gradle, "Production build guard missing"
