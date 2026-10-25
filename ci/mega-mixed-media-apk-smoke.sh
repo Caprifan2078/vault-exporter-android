@@ -67,6 +67,15 @@ for tick in $(seq 1 260);do
     if capture && grep -q 'Миллион слов завершён' /tmp/heavy-vault/ui.xml;then
       DONE=1;break
     fi
+    if grep -q 'Миллион слов прерван\|Тест остановлен\|Не удалось безопасно скачать' /tmp/heavy-vault/ui.xml;then
+      echo "FAIL: Android explicitly reported interrupted mega export"
+      python3 - <<'PY'
+import xml.etree.ElementTree as E
+root=E.parse('/tmp/heavy-vault/ui.xml').getroot()
+print('VISIBLE UI:',[n.get('text') for n in root.iter('node') if n.get('text')])
+PY
+      exit 48
+    fi
   fi
   if ! adb shell pidof "$APP" >/dev/null;then
     echo 'App process stopped during large export';exit 45
