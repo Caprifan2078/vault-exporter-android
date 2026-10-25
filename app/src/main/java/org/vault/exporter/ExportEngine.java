@@ -27,6 +27,30 @@ public final class ExportEngine {
     public CachePrivacyException(String message) { super(message); }
     public CachePrivacyException(String message, Throwable cause) { super(message,cause); }
   }
+  /** Stop BEFORE a huge cloud download consumes all app-private storage. */
+  public static final class StorageCapacityException extends IOException {
+    public final long requiredBytes,availableBytes;
+    StorageCapacityException(long required,long available){
+      super("Недостаточно памяти телефона для безопасного скачивания файла");
+      requiredBytes=required;availableBytes=available;
+    }
+    public String userMessage(){
+      long mib=1024L*1024L;
+      return "Недостаточно свободной памяти. Требуется примерно "
+        +((requiredBytes+mib-1)/mib)+" МиБ, доступно "+(availableBytes/mib)
+        +" МиБ. Освободи место или выбери меньший чат. Прогресс экспорта сохранён.";
+    }
+  }
+  private void checkCapacityBeforeDownload(JSONObject tdFile)throws StorageCapacityException {
+    final long mib=1024L*1024L, reserve=64L*mib;
+    long declared=Math.max(0L,tdFile.optLong("size",0L));
+    declared=Math.max(declared,Math.max(0L,tdFile.optLong("expected_size",0L)));
+    long available=new File(app.getFilesDir(),"tdlib/files").getUsableSpace();
+    if(available<=0)available=app.getFilesDir().getUsableSpace();
+    long doubled=declared> (Long.MAX_VALUE-reserve)/2 ? Long.MAX_VALUE : declared*2+reserve;
+    long required=Math.max(reserve,doubled);
+    if(available<required)throw new StorageCapacityException(required,available);
+  }
   private static final int FILE_RETRIES=3;
   private final Context app;
   private final Transport td;
@@ -476,7 +500,8 @@ public final class ExportEngine {
             if(stage.hasMedia(msgId,fileId)){
               saved=stage.mediaFingerprint(msgId,fileId);
             }else{
-              File source=cloudDownload(fileId);
+              checkCapacityBeforeDownload(attachment.file);
+            File source=cloudDownload(fileId);
               Exception saveFailure=null;
               try{saved=stage.saveMedia(msgId,fileId,source);}
               catch(Exception e){saveFailure=e;throw e;}
