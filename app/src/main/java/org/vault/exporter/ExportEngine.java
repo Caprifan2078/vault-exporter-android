@@ -22,6 +22,11 @@ public final class ExportEngine {
     public final boolean historyFinished;
     public Summary(int m,int f,int e,boolean done){messages=m;media=f;missing=e;historyFinished=done;}
   }
+  /** Privacy failure: the plaintext TDLib cache may still exist. Stop exporting. */
+  public static final class CachePrivacyException extends IOException {
+    public CachePrivacyException(String message) { super(message); }
+    public CachePrivacyException(String message, Throwable cause) { super(message,cause); }
+  }
   private static final int FILE_RETRIES=3;
   private final Context app;
   private final Transport td;
@@ -145,29 +150,92 @@ public final class ExportEngine {
     }
     throw new IOException("Не удалось получить ответ после ограничения Telegram");
   }
+
+  /** On any incomplete download, cancel first, delete local TDLib cache and
+   * confirm that there is no active writer and no file left behind.
+   * Never retry when plaintext cleanup cannot be established. */
+  private void purgeFailedDownload(int fileId, File observedSource) throws CachePrivacyException {
+    try {
+      JSONObject cancelled=td.await(req("cancelDownloadFile","file_id",fileId)
+        .put("only_if_pending",false),30);
+      if(!"ok".equals(cancelled.optString("@type")))
+        throw new IOException("TDLib did not confirm cancellation");
+      JSONObject deleted=td.await(req("deleteFile","file_id",fileId),30);
+      if(!"ok".equals(deleted.optString("@type")))
+        throw new IOException("TDLib did not confirm deletion");
+      JSONObject check=td.await(req("getFile","file_id",fileId),30);
+      if(!check.has("id") || check.optInt("id",-1)!=fileId)
+        throw new IOException("TDLib returned a different file during cleanup check");
+      JSONObject local=check.optJSONObject("local");
+      if(local==null || local.optBoolean("is_downloading_active",false))
+        throw new IOException("TDLib may still be writing plaintext");
+      String reported=local.optString("path","");
+      if(!reported.isEmpty()) {
+        File current=new File(reported).getCanonicalFile();
+        if(!current.getPath().startsWith(permittedRoot))
+          throw new IOException("Cleanup path is outside private TDLib cache");
+        if(current.isFile())throw new IOException("Plaintext cache remains after deletion");
+      }
+      if(observedSource!=null && observedSource.isFile())
+        throw new IOException("Observed plaintext cache remains after deletion");
+    } catch(Exception e) {
+      throw new CachePrivacyException(
+        "Не удалось подтвердить очистку временного файла после ошибки загрузки: "+fileId,e);
+    }
+  }
+
+  /** TDLib returns originals to unencrypted, app-private storage. The export
+   * may proceed only when both TDLib and the local filesystem confirm removal. */
+  private void purgeDownloadedSource(int fileId,File source) throws CachePrivacyException {
+    try {
+      JSONObject result=td.await(req("deleteFile","file_id",fileId),30);
+      if(!"ok".equals(result.optString("@type")))
+        throw new IOException("TDLib did not acknowledge deleteFile");
+      if(source.isFile())throw new IOException("Plaintext source still exists");
+    } catch(Exception e) {
+      throw new CachePrivacyException("Незашифрованная копия медиа не удалена из кэша: "+fileId,e);
+    }
+  }
+
   private File cloudDownload(int id) throws Exception {
     Exception last=null;
-    for(int attempt=1;attempt<=FILE_RETRIES;attempt++){
+    for(int attempt=1;attempt<=FILE_RETRIES;attempt++) {
+      File observedSource=null;
       try {
-        // synchronous=true waits for a full download. offset=0, limit=0 means ALL bytes.
         JSONObject result=safeRead(req("downloadFile","file_id",id).put("priority",16)
           .put("offset",0).put("limit",0).put("synchronous",true),3600);
         JSONObject local=result.optJSONObject("local");
-        if(local==null || !local.optBoolean("is_downloading_completed",false))throw new IOException("TDLib не завершила загрузку файла "+id);
-        File path=new File(local.optString("path","")).getCanonicalFile();
-        if(!path.isFile() || !path.getPath().startsWith(permittedRoot)) throw new SecurityException("Медиа вне закрытого каталога приложения");
-        return path;
-      } catch(TelegramRateLimit.Delay limit) { throw limit;
-      } catch(IOException limitOrIO) {
-        if (limitOrIO.getCause() instanceof TelegramRateLimit.Delay) throw limitOrIO;
-        last=limitOrIO;
-        if(attempt<FILE_RETRIES){progress.show("Повтор загрузки файла "+id+" ("+(attempt+1)+"/"+FILE_RETRIES+")");Thread.sleep(1000L*attempt);}
-      } catch(Exception e) {
-        last=e;
-        if(attempt<FILE_RETRIES) Thread.sleep(1000L*attempt);
+        if(local!=null&&!local.optString("path","").isEmpty())
+          observedSource=new File(local.optString("path")).getCanonicalFile();
+        if(!result.has("id") || result.optInt("id",-1)!=id)
+          throw new SecurityException("TDLib вернула неверный file_id для вложения "+id);
+        if(local==null || !local.optBoolean("is_downloading_completed",false))
+          throw new IOException("TDLib не завершила загрузку файла "+id);
+        if(observedSource==null || !observedSource.isFile() ||
+            !observedSource.getPath().startsWith(permittedRoot))
+          throw new SecurityException("Медиа вне закрытого каталога приложения");
+        long declared=result.optLong("size",0);
+        if(declared<0 || (declared>0 && observedSource.length()!=declared))
+          throw new IOException("Загруженный файл имеет неверный размер: "+id);
+        return observedSource;
+      } catch(Exception failure) {
+        try { purgeFailedDownload(id,observedSource); }
+        catch(CachePrivacyException cleanup) {
+          cleanup.addSuppressed(failure);
+          throw cleanup;
+        }
+        if(failure instanceof SecurityException || failure instanceof InterruptedException ||
+            failure instanceof TelegramRateLimit.Delay ||
+            (failure instanceof IOException && failure.getCause() instanceof TelegramRateLimit.Delay))
+          throw failure;
+        last=failure;
+        if(attempt<FILE_RETRIES) {
+          progress.show("Повтор загрузки файла "+id+" ("+(attempt+1)+"/"+FILE_RETRIES+")");
+          Thread.sleep(1000L*attempt);
+        }
       }
     }
-    throw new IOException("Не удалось скачать медиа "+id+" после "+FILE_RETRIES+" попыток; можно продолжить позже",last);
+    throw new IOException("Не удалось безопасно скачать файл "+id+"; можно продолжить позже",last);
   }
   private static byte[] bytes(StringBuilder builder){return builder.toString().getBytes(StandardCharsets.UTF_8);}
   public Summary export(long chatId,OutputStream output,char[] password) throws Exception {
@@ -275,9 +343,18 @@ public final class ExportEngine {
             saved=stage.mediaFingerprint(msgId,fileId);
           } else {
             File source=cloudDownload(fileId);
-            saved=stage.saveMedia(msgId,fileId,source);
-            // Remove plaintext TDLib cache copy after it has been durably staged encrypted.
-            try{td.await(req("deleteFile","file_id",fileId),30);}catch(Exception ignored){}
+            Exception saveFailure=null;
+            try { saved=stage.saveMedia(msgId,fileId,source); }
+            catch(Exception failure) { saveFailure=failure; throw failure; }
+            finally {
+              try { purgeDownloadedSource(fileId,source); }
+              catch(CachePrivacyException cleanup) {
+                try {stage.dropMedia(msgId,fileId);}
+                catch(Exception eraseFailure) {cleanup.addSuppressed(eraseFailure);}
+                if(saveFailure!=null)cleanup.addSuppressed(saveFailure);
+                throw cleanup;
+              }
+            }
           }
           String cat=category,path="media/"+msgId+"/"+fileId+extension(cat,msg);
           index.append(new JSONObject().put("message_id",msgId).put("file_id",fileId)
