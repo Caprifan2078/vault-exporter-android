@@ -1,0 +1,92 @@
+name: Build Vault Exporter installable Telegram TEST APK
+on:
+  push:
+    branches: [work/exporter-apk-build-20261025]
+    paths:
+      - '.github/workflows/installable-test-apk.yml'
+      - 'app/**'
+      - 'scripts/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Validate developer credentials (required for real Telegram login)
+        env:
+          VAULT_API_ID: ${{ secrets.VAULT_TELEGRAM_API_ID }}
+          VAULT_API_HASH: ${{ secrets.VAULT_TELEGRAM_API_HASH }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$VAULT_API_ID" =~ ^[1-9][0-9]*$ ]] || [[ ! "$VAULT_API_HASH" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            echo "::error::Missing valid developer API ID/hash. Set VAULT_TELEGRAM_API_ID and VAULT_TELEGRAM_API_HASH in repo Actions secrets. Do not paste into chats or commit."
+            exit 68
+          fi
+          install -d -m 700 "$HOME/.gradle"
+          (umask 077; printf 'telegramApiId=%s\ntelegramApiHash=%s\n' "$VAULT_API_ID" "$VAULT_API_HASH" > "$HOME/.gradle/gradle.properties")
+      - name: Install Android toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -1)
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;25.2.9519653' 'cmake;3.22.1'
+      - name: Get pinned official TDLib Android ARM64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: official-tdlib-arm64-UNTESTED-RUNTIME
+          run-id: '40106582322'
+          github-token: ${{ github.token }}
+          repository: adolfmerkel196-ux/vault-exporter-android
+          path: tdlib-build
+      - name: Validate and install TDLib
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fx 'source_repo=tdlib/td' tdlib-build/BUILD_PROVENANCE.txt
+          grep -Fx 'source_sha=ea3f69ce11aef458bfbb09869b809ede4447486f' tdlib-build/BUILD_PROVENANCE.txt
+          grep -Fx 'abi=arm64-v8a' tdlib-build/BUILD_PROVENANCE.txt
+          (cd tdlib-build && sha256sum -c SHA256SUMS.txt)
+          test "$(sha256sum tdlib-build/arm64-v8a/libtdjson.so | awk '{print $1}')" = 'a2dee806a79d036da93753d291a307c62975b1e9ad05c04aa7784d96a76e3626'
+          install -D -m 0644 tdlib-build/arm64-v8a/libtdjson.so app/src/main/jniLibs/arm64-v8a/libtdjson.so
+          python3 scripts/verify_tdlib_elf.py app/src/main/jniLibs/arm64-v8a/libtdjson.so
+          python3 scripts/preflight.py
+          python3 scripts/security_gate.py
+      - name: Build real network-capable TEST DC APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon -PtelegramEnvironment=test :app:assembleSandboxDc
+          APK=app/build/outputs/apk/sandboxDc/app-sandboxDc.apk
+          test -s "$APK"
+          unzip -t "$APK" | tail -1
+          unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/libtdjson.so'
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
+          "$AAPT" dump permissions "$APK" | grep -F 'android.permission.INTERNET'
+          "$AAPT" dump badging "$APK" | grep -F "package: name='org.vault.exporter.sandbox.testnet'"
+          mkdir -p dist
+          cp "$APK" dist/VaultExporter-TEST-DC.apk
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
+          echo "TEST TELEGRAM ONLY. Android login and media runtime remain unverified; do not use important accounts." > dist/IMPORTANT.txt
+      - name: Erase credentials after job
+        if: always()
+        run: rm -f "$HOME/.gradle/gradle.properties"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: VaultExporter-NETWORK-TEST-APK-NOT-PRODUCTION
+          path: dist/
+          retention-days: 7
