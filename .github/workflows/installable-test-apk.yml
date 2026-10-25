@@ -67,6 +67,13 @@ jobs:
             exit 69
           fi
           echo "PASS: trial APK has no Android INTERNET permission"
+          BUILDCONFIG=app/build/generated/source/buildConfig/sandboxDc/org/vault/exporter/BuildConfig.java
+          test -s "$BUILDCONFIG"
+          grep -Eq 'TELEGRAM_API_ID = 0;' "$BUILDCONFIG"
+          grep -Fq 'TELEGRAM_API_HASH = "";' "$BUILDCONFIG"
+          grep -Eq 'TELEGRAM_TEST_DC = true;' "$BUILDCONFIG"
+          grep -Eq 'ALLOW_PRODUCTION = false;' "$BUILDCONFIG"
+          echo "PASS: no Telegram credentials or production connectivity baked into APK"
           "$AAPT" dump badging "$APK" | grep -F "package: name='org.vault.exporter.sandbox.testnet'"
           mkdir -p dist
           cp "$APK" dist/VaultExporter-OFFLINE-TRAINING.apk
