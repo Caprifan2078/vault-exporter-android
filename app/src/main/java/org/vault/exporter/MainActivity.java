@@ -30,6 +30,7 @@ public final class MainActivity extends Activity {
   private final java.util.concurrent.atomic.AtomicBoolean nativeProbeRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
   private final int CREATE_ARCHIVE = 718;
   private final int CREATE_OFFLINE_FIXTURE = 719;
+  private final int CREATE_SYNTHETIC_EXPORT = 720;
   private char[] pendingPassphrase;
   // The document picker is an asynchronous operation; preserve the original chat.
   private long pendingChatId = 0;
@@ -66,6 +67,8 @@ public final class MainActivity extends Activity {
     } else {
       message("ВНИМАНИЕ: эта сборка подключается к настоящему Telegram. Риск ограничений стороннего API-клиента нельзя исключить.");
     }
+    if(BuildConfig.TELEGRAM_TEST_DC)
+      button("Попробовать без аккаунта: скачать учебный чат",this::requestSyntheticExport);
     button("Посмотреть, как работает экспорт (офлайн)", this::showOfflineDemo);
     if (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)
       button("Создать проверочный архив .tva (офлайн)", this::requestOfflineFixture);
@@ -78,6 +81,95 @@ public final class MainActivity extends Activity {
     }
     message("Экспорт не запускается автоматически. Не требуется удалять или отключать основной Telegram.");
   }
+
+  /** Runs the actual ExportEngine against a fictional TDLib-shaped local backend.
+   * This control exists ONLY in test-data-center builds; it NEVER calls Telegram. */
+  private void requestSyntheticExport() {
+    if(!BuildConfig.TELEGRAM_TEST_DC||td!=null||exporting){
+      showStatus("Учебная проверка доступна только без подключённого Telegram.");
+      return;
+    }
+    new AlertDialog.Builder(this).setTitle("Безопасная учебная переписка")
+      .setMessage("60 вымышленных сообщений, 7 настоящих учебных медиафайлов: фотографии, видео, документ и стикер.\n\nЭкспорт проходит через ТОТ ЖЕ движок, что и обычные чаты. Ни аккаунт, ни интернет не нужны.\n\nСохранённый ZIP не зашифрован, но содержит только вымышленные данные.")
+      .setNegativeButton("Отмена",null).setPositiveButton("Скачать учебный чат",(d,w)->{
+        exporting=true;
+        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/zip");
+        intent.putExtra(Intent.EXTRA_TITLE,"Vault_УЧЕБНАЯ_ПЕРЕПИСКА.zip");
+        try{startActivityForResult(intent,CREATE_SYNTHETIC_EXPORT);}
+        catch(Exception e){exporting=false;showStatus("Выбор папки недоступен. Повтори попытку.");}
+      }).show();
+  }
+  private void saveSyntheticExport(Uri destination) {
+    if(!BuildConfig.TELEGRAM_TEST_DC || !exporting)return;
+    String authority=destination.getAuthority();
+    if(!"com.android.externalstorage.documents".equals(authority)
+        &&!"com.android.providers.downloads.documents".equals(authority)
+        &&!"com.android.providers.media.documents".equals(authority)){
+      exporting=false;
+      boolean removed=false;
+      try{removed=getContentResolver().delete(destination,null,null)>0;}catch(Exception ignored){}
+      showStatus("Для учебного ZIP выбери память самого телефона, не облако."
+        +(removed?"":" Проверь и удали созданный пустой файл вручную."));
+      return;
+    }
+    showStatus("Учебный чат: загружаем 60 сообщений и медиа в закрытый кэш…");
+    clearUi();message("Идёт настоящая проверка механизма экспорта — без Telegram. Держи приложение открытым.");
+    worker.execute(()->{
+      boolean clean=false;
+      try{
+        ExportEngine.Summary summary;
+        ExportEngine.Transport simulation=new LocalMockTdlib(this);
+        try(OutputStream out=getContentResolver().openOutputStream(destination,"w")){
+          if(out==null)throw new IOException("Не удалось открыть файл");
+          summary=new ExportEngine(this,simulation,this::showStatus)
+            .exportHtml(LocalMockTdlib.CHAT_ID,out);
+        }
+        if(summary.messages!=LocalMockTdlib.MESSAGE_COUNT
+            ||summary.media!=LocalMockTdlib.MEDIA_COUNT||!summary.historyFinished)
+          throw new IOException("Учебная переписка выгружена не полностью");
+        int verified;
+        try(InputStream in=getContentResolver().openInputStream(destination)){
+          if(in==null)throw new IOException("Не удалось проверить файл");
+          verified=HtmlArchiveWriter.verify(in,summary.messages,summary.media);
+        }
+        if(verified!=LocalMockTdlib.MESSAGE_COUNT)
+          throw new IOException("Ошибка проверки учебной истории");
+        byte[] key=null;
+        try{
+          key=new SessionSecrets(this).getOrCreate();
+          try(ResumeStore staged=new ResumeStore(new File(getFilesDir(),"export-progress"),
+              LocalMockTdlib.CHAT_ID,key)){staged.erase();clean=true;}
+        }finally{if(key!=null)Arrays.fill(key,(byte)0);}
+        final boolean cleanDone=clean;
+        showStatus("Готово! 60 сообщений и 7 файлов в учебном ZIP. Это НЕ выгрузка Telegram.");
+        runOnUiThread(()->{
+          if(!isFinishing()&&!isDestroyed()){
+            clearUi();
+            message("Готово! ZIP сохранён в выбранную папку.\n60 вымышленных сообщений и 7 медиафайлов.\n"
+              +(cleanDone?"Временные данные удалены.":"Внимание: закрытый временный прогресс не удалён."));
+            button("На главный экран",this::showWelcome);
+            new AlertDialog.Builder(this).setTitle("Учебный экспорт завершён")
+              .setMessage("Получился настоящий ZIP со страницами истории и медиа.\n\n"
+                +"Вы проверили движок на вымышленных данных — без сети и аккаунта Telegram."
+                +(cleanDone?"":"\n\nНе удалось подтвердить удаление зашифрованного прогресса."))
+              .setPositiveButton("Понятно",null).show();
+          }
+        });
+      }catch(Exception ex){
+        boolean removed=false;
+        try{removed=getContentResolver().delete(destination,null,null)>0;}catch(Exception ignored){}
+        String warning=removed?"":" ВНИМАНИЕ: удали незавершённый ZIP из выбранной папки вручную.";
+        showStatus("Учебный экспорт не удался ("+ex.getClass().getSimpleName()+")."+warning);
+        runOnUiThread(()->{
+          clearUi();button("Повторить учебную проверку",this::requestSyntheticExport);
+          button("На главный экран",this::showWelcome);
+        });
+      }finally{exporting=false;}
+    });
+  }
+
   private void showOfflineDemo() {
     new AlertDialog.Builder(this)
       .setTitle("Офлайн-демонстрация")
@@ -471,6 +563,11 @@ public final class MainActivity extends Activity {
   }
   @Override protected void onActivityResult(int request, int result, Intent data) {
     super.onActivityResult(request,result,data);
+    if(request==CREATE_SYNTHETIC_EXPORT){
+      if(result==RESULT_OK&&data!=null&&data.getData()!=null)saveSyntheticExport(data.getData());
+      else exporting=false;
+      return;
+    }
     if (request == CREATE_OFFLINE_FIXTURE) {
       if (result == RESULT_OK && data != null && data.getData() != null)
         saveOfflineFixture(data.getData());
