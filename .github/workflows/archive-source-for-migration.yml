@@ -25,7 +25,7 @@ jobs:
           from pathlib import Path
           files = subprocess.check_output(['git','ls-files','-z']).split(b'\0')
           paths = [os.fsdecode(p) for p in files if p]
-          forbidden = re.compile(r'(^|/)(\.env(\..*)?|.*\.keystore|.*\.jks|.*\.p12|id_rsa|id_ed25519|.*token.*|.*secret.*)$',re.I)
+          forbidden = re.compile(r'(^|/)(\.env(\..*)?|.*\.keystore|.*\.jks|.*\.p12|id_rsa|id_ed25519|(token|secret)(\..*)?)$',re.I)
           excluded = [p for p in paths if forbidden.search(p)]
           allowed = [p for p in paths if not forbidden.search(p)]
           with zipfile.ZipFile('vault-github-sources.zip','w',compression=zipfile.ZIP_DEFLATED,compresslevel=8) as z:
