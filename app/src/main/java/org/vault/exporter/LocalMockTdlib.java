@@ -45,7 +45,7 @@ public final class LocalMockTdlib implements ExportEngine.Transport {
     switch(index%5) {
       case 0:text="Сообщение №"+(index+1)+". Это НЕ настоящий Telegram: все участники и медиа вымышлены.";break;
       case 1:text="Тест переноса строк:\nПривет, как дела?\nФото и файлы должны сохраняться полностью.";break;
-      case 2:text="Ссылка: https://example.org/ — никаких запросов по ней не делаем.";break;
+      case 2:text="Ссылка: https://example.invalid — никаких запросов по ней не делаем.";break;
       case 3:text="HTML-безопасность: <script>alert('не исполнять')</script> & кавычки.";break;
       default:text="Проверяем кириллицу, emoji 📦✨ и экспорт длинной истории.";break;
     }
