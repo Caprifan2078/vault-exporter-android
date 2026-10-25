@@ -123,7 +123,14 @@ public final class ExportEngine {
       case "round_video":case "video":case "animation":return ".mp4";
       case "voice":return ".ogg";
       case "audio":return ".mp3";
-      case "sticker":return ".webp";
+      case "sticker": {
+        JSONObject sticker=deepest(message,"content","sticker","format");
+        String stickerType=sticker==null?"stickerFormatWebp":sticker.optString("@type","");
+        if("stickerFormatWebp".equals(stickerType))return ".webp";
+        if("stickerFormatTgs".equals(stickerType))return ".tgs";
+        if("stickerFormatWebm".equals(stickerType))return ".webm";
+        throw new IllegalArgumentException("Неизвестный формат стикера: "+stickerType);
+      }
       default:return ".bin";
     }
   }
@@ -237,6 +244,146 @@ public final class ExportEngine {
     }
     throw new IOException("Не удалось безопасно скачать файл "+id+"; можно продолжить позже",last);
   }
+
+  private static final class Attachment {
+    final JSONObject file;
+    final String category,mime,originalName,role;
+    final int ordinal;
+    Attachment(JSONObject f,String c,String mimeType,String name,String role,int ordinal){
+      this.file=f;this.category=c;this.mime=mimeType;this.originalName=name;
+      this.role=role;this.ordinal=ordinal;
+    }
+    int id(){return file.optInt("id",0);}
+  }
+  /** Avoid thumbnails becoming the original photo; one original per attachment. */
+  private static JSONObject originalPhoto(JSONObject photo){
+    JSONArray sizes=photo==null?null:photo.optJSONArray("sizes");
+    if(sizes==null)return null;
+    JSONObject chosen=null;long max=-1;
+    for(int i=0;i<sizes.length();i++){
+      JSONObject item=sizes.optJSONObject(i);
+      if(item==null)continue;
+      JSONObject file=item.optJSONObject("photo");
+      if(file==null||file.optInt("id",0)<=0)continue;
+      long w=Math.max(0,item.optLong("width")),h=Math.max(0,item.optLong("height"));
+      long area=w*h;
+      if(area>=max){max=area;chosen=file;}
+    }
+    return chosen;
+  }
+  private static void attach(List<Attachment> out,JSONObject file,String category,String mime,
+      String name,String role,int ordinal,long messageId)throws IOException {
+    if(file==null||file.optInt("id",0)<=0)
+      throw new IOException("В сообщении "+messageId+" нет исходного файла "+role);
+    for(Attachment a:out)if(a.id()==file.optInt("id",0))
+      throw new IOException("Повторный идентификатор вложения: "+messageId);
+    out.add(new Attachment(file,category,mime,name,role,ordinal));
+  }
+  private static List<Attachment> attachments(JSONObject msg)throws IOException {
+    long mid=msg.optLong("id");
+    JSONObject c=msg.optJSONObject("content");
+    String kind=c==null?"":c.optString("@type","");
+    if(msg.has("can_be_saved")&&!msg.optBoolean("can_be_saved",true))
+      throw new SecurityException("Сохранение сообщения запрещено Telegram: "+mid);
+    if(c!=null&&c.optBoolean("is_secret",false))
+      throw new SecurityException("Нельзя экспортировать самоисчезающее медиа: "+mid);
+    ArrayList<Attachment> result=new ArrayList<>();
+    String category=type(msg);
+    if(!"other".equals(category)){
+      attach(result,mainFile(msg),category,mime(msg,category),fileName(msg),"main",0,mid);
+      return result;
+    }
+    if("messagePaidMedia".equals(kind)){
+      JSONArray media=c.optJSONArray("media");
+      if(media==null||media.length()==0)
+        throw new IOException("Пустой список платных медиа "+mid);
+      for(int i=0;i<media.length();i++){
+        JSONObject item=media.optJSONObject(i);
+        String mediaKind=item==null?"":item.optString("@type","");
+        if("paidMediaPhoto".equals(mediaKind))
+          attach(result,originalPhoto(item.optJSONObject("photo")),"photo","image/jpeg",
+            "","paid_photo",i,mid);
+        else if("paidMediaVideo".equals(mediaKind)){
+          JSONObject v=item.optJSONObject("video");
+          attach(result,object(v,"video"),"video",
+            v==null?"video/mp4":v.optString("mime_type","video/mp4"),
+            "","paid_video",i,mid);
+        }else throw new IOException("Медиа скрыто или тип не поддержан: "+mediaKind+" в "+mid);
+      }
+      return result;
+    }
+    if("messageChatChangePhoto".equals(kind)){
+      JSONObject p=c.optJSONObject("photo");
+      attach(result,originalPhoto(p),"photo","image/jpeg","","chat_photo",0,mid);
+      JSONObject animation=p==null?null:p.optJSONObject("animation");
+      if(animation!=null){
+        JSONObject animatedFile=animation.optJSONObject("file");
+        if(animatedFile==null)animatedFile=animation.optJSONObject("animation");
+        attach(result,animatedFile,"video","video/mp4","","chat_photo_animation",1,mid);
+      }
+      if(p!=null&&p.optJSONObject("sticker")!=null)
+        throw new IOException("Анимированное фото со стикером пока не поддержано: "+mid);
+      return result;
+    }
+    if("messageText".equals(kind)){
+      JSONObject preview=c.optJSONObject("link_preview");
+      if(preview==null)return result;
+      String previewType=preview.optString("type","");
+      JSONObject p=preview.optJSONObject("photo"),v=preview.optJSONObject("video");
+      JSONObject doc=preview.optJSONObject("document"),anim=preview.optJSONObject("animation");
+      JSONObject audio=preview.optJSONObject("audio");
+      JSONArray album=preview.optJSONArray("album");
+      if(album!=null&&!preview.optBoolean("has_large_media",true)){
+        // A thumbnail-only album is not a safely restorable original.
+        throw new IOException("Предпросмотр без полных исходных файлов: "+mid);
+      }
+      if(album!=null){
+        for(int i=0;i<album.length();i++){
+          JSONObject element=album.optJSONObject(i);
+          String itemType=element==null?"":element.optString("@type","");
+          if("linkPreviewAlbumMediaPhoto".equals(itemType))
+            attach(result,originalPhoto(element.optJSONObject("photo")),"photo","image/jpeg",
+              "","preview_photo",i,mid);
+          else if("linkPreviewAlbumMediaVideo".equals(itemType)){
+            JSONObject item=element.optJSONObject("video");
+            attach(result,object(item,"video"),"video","video/mp4",
+              "","preview_video",i,mid);
+          }else throw new IOException("Неподдержанный элемент альбома ссылок: "+itemType);
+        }
+        return result;
+      }
+      if(p!=null)attach(result,originalPhoto(p),"photo","image/jpeg","","preview_photo",0,mid);
+      if(v!=null)attach(result,object(v,"video"),"video","video/mp4","","preview_video",1,mid);
+      if(doc!=null)attach(result,object(doc,"document"),"document",
+        doc.optString("mime_type","application/octet-stream"),doc.optString("file_name",""),
+        "preview_document",2,mid);
+      if(anim!=null)attach(result,object(anim,"animation"),"animation",
+        anim.optString("mime_type","video/mp4"),"","preview_animation",3,mid);
+      if(audio!=null)attach(result,object(audio,"audio"),"audio",
+        audio.optString("mime_type","audio/mpeg"),"","preview_audio",4,mid);
+      if(result.isEmpty() && !previewType.isEmpty()
+          && !("linkPreviewTypeArticle".equals(previewType)||"linkPreviewTypeWebApp".equals(previewType)))
+        throw new IOException("Непроверенный предпросмотр ссылки "+previewType+" в "+mid);
+      return result;
+    }
+    if(!isVerifiedNonMediaContent(kind))
+      throw new IOException("Тип сообщения "+kind+" ещё не проверен на медиа: "+mid);
+    return result;
+  }
+  private static String attachmentExtension(Attachment a,JSONObject msg){
+    if("photo".equals(a.category))return ".jpg";
+    if("preview_video".equals(a.role)||"paid_video".equals(a.role)||
+       "chat_photo_animation".equals(a.role))return ".mp4";
+    if("preview_animation".equals(a.role))return ".mp4";
+    if(a.originalName!=null){
+      int dot=a.originalName.lastIndexOf('.');
+      if(dot>0){
+        String ext=a.originalName.substring(dot).toLowerCase(Locale.ROOT);
+        if(ext.matches("\\.[a-z0-9]{1,8}"))return ext;
+      }
+    }
+    return extension(a.category,msg);
+  }
   private static byte[] bytes(StringBuilder builder){return builder.toString().getBytes(StandardCharsets.UTF_8);}
   public Summary export(long chatId,OutputStream output,char[] password) throws Exception {
     JSONObject chat=safeRead(req("getChat","chat_id",chatId),30);
@@ -319,49 +466,40 @@ public final class ExportEngine {
         StringBuilder line=new StringBuilder(),index=new StringBuilder();
         int downloadedOnPage=0;
         for(JSONObject msg:page) {
-          long msgId=msg.getLong("id");line.append(msg.toString()).append('\n');
-          JSONObject f=mainFile(msg);
-          String category=type(msg);
-          if(f==null || f.optInt("id")<=0) {
-            // A message with known media must never quietly become "success: 0 missing".
-            if(!"other".equals(category)) throw new IOException("Медиа из сообщения "+msgId+" недоступно; экспорт можно повторить позже");
-            JSONObject content=msg.optJSONObject("content");
-            String contentType=content==null?"":content.optString("@type");
-            // Fail closed for unknown Telegram message kinds. Many valid TDLib content
-            // variants carry embedded or multiple files (paid media, chat photos,
-            // gifts, link previews, etc.), so assuming "other" == "no media"
-            // silently produces a falsely complete archive.
-            if (!("messageText".equals(contentType) &&
-                  (content==null || content.optJSONObject("link_preview")==null)) &&
-                !isVerifiedNonMediaContent(contentType))
-              throw new IOException("Тип сообщения "+contentType+" пока не проверен на полноту вложений; прогресс сохранён");
-            continue;
-          }
-          int fileId=f.getInt("id");
-          ResumeStore.Media saved;
-          if(stage.hasMedia(msgId,fileId)) {
-            saved=stage.mediaFingerprint(msgId,fileId);
-          } else {
-            File source=cloudDownload(fileId);
-            Exception saveFailure=null;
-            try { saved=stage.saveMedia(msgId,fileId,source); }
-            catch(Exception failure) { saveFailure=failure; throw failure; }
-            finally {
-              try { purgeDownloadedSource(fileId,source); }
-              catch(CachePrivacyException cleanup) {
-                try {stage.dropMedia(msgId,fileId);}
-                catch(Exception eraseFailure) {cleanup.addSuppressed(eraseFailure);}
-                if(saveFailure!=null)cleanup.addSuppressed(saveFailure);
-                throw cleanup;
+          long msgId=msg.getLong("id");
+          // Validate before recording this message as a completed checkpoint.
+          List<Attachment> attached=attachments(msg);
+          line.append(msg.toString()).append('\n');
+          for(Attachment attachment:attached){
+            int fileId=attachment.id();
+            ResumeStore.Media saved;
+            if(stage.hasMedia(msgId,fileId)){
+              saved=stage.mediaFingerprint(msgId,fileId);
+            }else{
+              File source=cloudDownload(fileId);
+              Exception saveFailure=null;
+              try{saved=stage.saveMedia(msgId,fileId,source);}
+              catch(Exception e){saveFailure=e;throw e;}
+              finally{
+                try{purgeDownloadedSource(fileId,source);}
+                catch(CachePrivacyException cleanup){
+                  try{stage.dropMedia(msgId,fileId);}
+                  catch(Exception eraseFailure){cleanup.addSuppressed(eraseFailure);}
+                  if(saveFailure!=null)cleanup.addSuppressed(saveFailure);
+                  throw cleanup;
+                }
               }
             }
+            String target="media/"+msgId+"/"+fileId+attachmentExtension(attachment,msg);
+            index.append(new JSONObject()
+              .put("message_id",msgId).put("file_id",fileId)
+              .put("category",attachment.category).put("mime_type",attachment.mime)
+              .put("original_name",attachment.originalName).put("role",attachment.role)
+              .put("position",attachment.ordinal).put("path",target)
+              .put("sha256",saved.sha256).put("bytes",saved.bytes)
+              .toString()).append('\n');
+            downloadedOnPage++;
           }
-          String cat=category,path="media/"+msgId+"/"+fileId+extension(cat,msg);
-          index.append(new JSONObject().put("message_id",msgId).put("file_id",fileId)
-            .put("category",cat).put("mime_type",mime(msg,cat))
-            .put("original_name",fileName(msg)).put("path",path)
-            .put("sha256",saved.sha256).put("bytes",saved.bytes).toString()).append('\n');
-          downloadedOnPage++;
         }
         int next=s.pages+1;
         stage.putPage(next,bytes(line),bytes(index));
