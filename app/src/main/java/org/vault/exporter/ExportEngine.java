@@ -14,6 +14,9 @@ import java.util.*;
  */
 public final class ExportEngine {
   public interface Progress { void show(String message); }
+  /** Injectable read-only Telegram transport. Production uses TdGateway; a local
+   * test fixture supplies the same request/response shapes with NO network. */
+  public interface Transport { JSONObject await(JSONObject request, long timeoutSeconds) throws Exception; }
   public static final class Summary {
     public final int messages, media, missing;
     public final boolean historyFinished;
@@ -21,11 +24,14 @@ public final class ExportEngine {
   }
   private static final int FILE_RETRIES=3;
   private final Context app;
-  private final TdGateway td;
+  private final Transport td;
   private final Progress progress;
   private final String permittedRoot;
   public ExportEngine(Context ctx,TdGateway td,Progress progress) throws Exception {
-    app=ctx.getApplicationContext();this.td=td;this.progress=progress;
+    this(ctx,td::await,progress);
+  }
+  public ExportEngine(Context ctx,Transport transport,Progress progress) throws Exception {
+    app=ctx.getApplicationContext();this.td=transport;this.progress=progress;
     permittedRoot=new File(app.getFilesDir(),"tdlib/files").getCanonicalPath()+File.separator;
   }
   private static JSONObject req(String name,String key,Object value) throws JSONException {return TdGateway.cmd(name).put(key,value);}
