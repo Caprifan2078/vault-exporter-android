@@ -127,6 +127,12 @@ public final class ResumeStore implements Closeable {
       throw new IOException("Недостаточно места для безопасного сохранения медиа");
     return put(name,new BufferedInputStream(new FileInputStream(plaintext)));
   }
+  /** Never resume with a media checkpoint whose plaintext cache cleanup failed. */
+  public void dropMedia(long messageId,int fileId) throws IOException {
+    File saved=path(mediaName(messageId,fileId));
+    if(saved.exists() && !saved.delete())
+      throw new IOException("Unable to discard unsafe encrypted media checkpoint");
+  }
   public boolean hasMedia(long messageId,int fileId) { return exists(mediaName(messageId,fileId)); }
   public Media mediaFingerprint(long messageId,int fileId) throws Exception { return fingerprint(mediaName(messageId,fileId)); }
   public InputStream openMedia(long messageId,int fileId) throws Exception { return open(mediaName(messageId,fileId)); }
