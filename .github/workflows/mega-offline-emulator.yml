@@ -16,7 +16,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: VaultExporter-REAL-OFFLINE-MOCK-APK
-          run-id: '40243581269'
+          run-id: '40244041486'
           repository: adolfmerkel196-ux/vault-exporter-android
           github-token: ${{ github.token }}
           path: ci-apk
