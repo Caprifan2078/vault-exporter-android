@@ -72,8 +72,22 @@ tasks.register('verifyExporterBuild') {
             throw new GradleException('Missing official Android arm64-v8a TDLib binary: libtdjson.so')
         if (telegramEnvironment == 'production' && !productionApproved)
             throw new GradleException('Production mode requires explicit approval')
-        if (!(telegramId ==~ /[1-9][0-9]*/) || !(telegramHash ==~ /[a-fA-F0-9]{32}/))
+        // The *single* isolated offline sandbox build requires no Telegram API key.
+        // The sandbox manifest removes INTERNET and the UI disables all login.
+        // This exception must never apply to production or other build tasks.
+        def tasksRequested = gradle.startParameter.taskNames
+        def offlineSandboxOnly = telegramEnvironment == 'test' &&
+            tasksRequested.size() == 1 &&
+            tasksRequested[0].toLowerCase(java.util.Locale.ROOT).endsWith('assemblesandboxdc') &&
+            file('src/sandboxDc/AndroidManifest.xml').text.contains('tools:node="remove"') &&
+            file('src/main/java/org/vault/exporter/MainActivity.java').text.contains(
+                'if(BuildConfig.TELEGRAM_TEST_DC){')
+        if (offlineSandboxOnly) {
+            if (telegramId != '0' || telegramHash != '')
+                throw new GradleException('Offline training APK must contain NO Telegram API credentials')
+        } else if (!(telegramId ==~ /[1-9][0-9]*/) || !(telegramHash ==~ /[a-fA-F0-9]{32}/)) {
             throw new GradleException('Missing developer Telegram API credentials (telegramApiId/telegramApiHash)')
+        }
     }
 }
 tasks.named('preBuild').configure { dependsOn(tasks.named('verifyExporterBuild')) }
