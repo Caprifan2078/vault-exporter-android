@@ -379,24 +379,43 @@ public final class MainActivity extends Activity {
         }
         runOnUiThread(() -> {
           if(keys.isEmpty()) { showStatus("Подходящих облачных чатов нет."); return; }
-          new AlertDialog.Builder(this).setTitle("Выбрать переписку")
-            .setItems(titles.toArray(new String[0]), (d, which) -> {
-              selectedChatId=keys.get(which); selectedChatTitle=titles.get(which);
-              selected.setText("Выбрано: "+selectedChatTitle);
-              showStatus("Проверяем сохранённый прогресс…");
-              worker.execute(() -> {
-                byte[] secret=null;
-                try {
-                  secret=new SessionSecrets(this).getOrCreate();
-                  try(ResumeStore store=new ResumeStore(new File(getFilesDir(),"export-progress"),selectedChatId,secret)) {
-                    ResumeStore.State state=store.state();
-                    if(state.pages>0) showStatus("Можно продолжить: сохранено "+state.messages+" сообщений и "+state.media+" файлов.");
-                    else showStatus("Готово. Нажми «Скачать всё / продолжить экспорт».");
-                  }
-                } catch(Exception e){showStatus("Ошибка чтения прогресса: "+e.getClass().getSimpleName());}
-                finally {if(secret!=null)Arrays.fill(secret,(byte)0);}
-              });
-            }).setNegativeButton("Отмена",null).show();
+          EditText search=new EditText(this);
+          search.setSingleLine(true);
+          search.setHint("Часть названия чата (можно оставить пустым)");
+          new AlertDialog.Builder(this).setTitle("Найти переписку")
+            .setView(search).setNegativeButton("Отмена",null)
+            .setPositiveButton("Показать чаты",(dialog,unused)->{
+              String query=search.getText().toString().toLowerCase(java.util.Locale.ROOT).trim();
+              ArrayList<Integer> found=new ArrayList<>();
+              ArrayList<String> names=new ArrayList<>();
+              for(int n=0;n<titles.size()&&found.size()<200;n++) {
+                if(titles.get(n).toLowerCase(java.util.Locale.ROOT).contains(query)){
+                  found.add(n);names.add(titles.get(n));
+                }
+              }
+              if(found.isEmpty()){showStatus("Такой чат не найден. Повтори поиск.");return;}
+              new AlertDialog.Builder(this).setTitle("Выбрать чат")
+                .setItems(names.toArray(new String[0]),(picked,which)->{
+                  int original=found.get(which);
+                  long chatId=keys.get(original);
+                  selectedChatId=chatId;selectedChatTitle=titles.get(original);
+                  selected.setText("Выбрано: "+selectedChatTitle);
+                  showStatus("Проверяем сохранённый прогресс…");
+                  worker.execute(()->{
+                    byte[] secret=null;
+                    try{
+                      secret=new SessionSecrets(this).getOrCreate();
+                      try(ResumeStore store=new ResumeStore(new File(getFilesDir(),"export-progress"),chatId,secret)){
+                        ResumeStore.State state=store.state();
+                        if(selectedChatId==chatId)showStatus(state.pages>0
+                          ? "Продолжим экспорт: "+state.messages+" сообщений и "+state.media+" файлов."
+                          : "Готово. Нажми «Скачать зашифрованный архив».");
+                      }
+                    }catch(Exception e){if(selectedChatId==chatId)showStatus("Не удалось проверить прогресс.");}
+                    finally{if(secret!=null)Arrays.fill(secret,(byte)0);}
+                  });
+                }).setNegativeButton("Отмена",null).show();
+            }).show();
         });
       } catch(Exception e) { showStatus("Не удалось загрузить чаты: "+e.getMessage()); }
     });
