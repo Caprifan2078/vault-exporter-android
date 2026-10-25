@@ -31,7 +31,7 @@ jobs:
           # Never use these keys for production or important accounts.
           test "${{ github.ref_name }}" = 'work/exporter-apk-build-20261025'
           install -d -m 700 "$HOME/.gradle"
-          (umask 077; printf 'telegramApiId=%s\\ntelegramApiHash=%s\\n' '17349' '344583e45741c457fe1862106095a5eb' > "$HOME/.gradle/gradle.properties")
+          (umask 077; printf 'telegramApiId=%s\ntelegramApiHash=%s\n' '17349' '344583e45741c457fe1862106095a5eb' > "$HOME/.gradle/gradle.properties")
       - name: Install Android toolchain
         shell: bash
         run: |
