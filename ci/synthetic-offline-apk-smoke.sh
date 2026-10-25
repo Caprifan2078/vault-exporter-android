@@ -4,6 +4,19 @@ APP_ID=org.vault.exporter.sandbox.testnet
 APK="$APK_UNDER_TEST"
 test -s "$APK"
 mkdir -p /tmp/vault-mock
+mkdir -p "$GITHUB_WORKSPACE/mock-debug"
+debug_on_exit() {
+  local code=$?
+  if test "$code" -ne 0; then
+    echo "Capturing emulator UI and app-only log errors after failed synthetic export"
+    adb shell uiautomator dump /sdcard/mock-fail.xml >/dev/null 2>&1 || true
+    adb exec-out cat /sdcard/mock-fail.xml > "$GITHUB_WORKSPACE/mock-debug/window.xml" 2>/dev/null || true
+    adb exec-out screencap -p > "$GITHUB_WORKSPACE/mock-debug/screen.png" 2>/dev/null || true
+    adb logcat -d -s AndroidRuntime:E '*:S' > "$GITHUB_WORKSPACE/mock-debug/android-fatal.txt" 2>/dev/null || true
+    adb shell ls -la /sdcard/Download > "$GITHUB_WORKSPACE/mock-debug/downloads.txt" 2>/dev/null || true
+  fi
+}
+trap debug_on_exit EXIT
 adb shell svc wifi disable || true
 adb shell svc data disable || true
 adb install -r "$APK"
@@ -70,7 +83,7 @@ if find_button "save" >/dev/null 2>&1; then tap_found "save"
 elif find_button "сохранить" >/dev/null 2>&1; then tap_found "сохранить"
 else echo "No system document save action";cat /tmp/vault-mock/window.xml;exit 43;fi
 FILE=""
-for attempt in $(seq 1 40);do
+for attempt in $(seq 1 25);do
   FILE="$(adb shell find /sdcard -iname 'Vault*zip' 2>/dev/null | head -1 | tr -d '\r')"
   if [[ -n "$FILE" ]];then
     if adb pull "$FILE" /tmp/vault-mock/out.zip >/dev/null 2>&1 &&
