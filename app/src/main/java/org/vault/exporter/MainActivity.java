@@ -31,6 +31,7 @@ public final class MainActivity extends Activity {
   private final int CREATE_ARCHIVE = 718;
   private final int CREATE_OFFLINE_FIXTURE = 719;
   private final int CREATE_SYNTHETIC_EXPORT = 720;
+  private final int CREATE_HEAVY_EXPORT = 721;
   private char[] pendingPassphrase;
   // The document picker is an asynchronous operation; preserve the original chat.
   private long pendingChatId = 0;
@@ -69,6 +70,8 @@ public final class MainActivity extends Activity {
     }
     if(BuildConfig.TELEGRAM_TEST_DC)
       button("Попробовать без аккаунта: скачать учебный чат",this::requestSyntheticExport);
+    if(BuildConfig.TELEGRAM_TEST_DC)
+      button("Тяжёлый тест: 480 000 слов и большие файлы",this::requestHeavyExport);
     button("Посмотреть, как работает экспорт (офлайн)", this::showOfflineDemo);
     if (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)
       button("Создать проверочный архив .tva (офлайн)", this::requestOfflineFixture);
@@ -86,6 +89,122 @@ public final class MainActivity extends Activity {
 
   /** Runs the actual ExportEngine against a fictional TDLib-shaped local backend.
    * This control exists ONLY in test-data-center builds; it NEVER calls Telegram. */
+
+  /** Explicitly opted-in, entirely local large-volume scenario. Unlike the small
+   * demonstration, the protected final archive streams directly to the selected
+   * Android document; it is never accumulated in a giant byte[]. */
+  private void requestHeavyExport() {
+    if(!BuildConfig.TELEGRAM_TEST_DC || td!=null || exporting) {
+      showStatus("Тяжёлый учебный тест доступен только без Telegram.");
+      return;
+    }
+    long free=getFilesDir().getUsableSpace();
+    if(free<256L*1024*1024) {
+      new AlertDialog.Builder(this).setTitle("Недостаточно свободной памяти")
+        .setMessage("Для безопасного тяжёлого теста нужно минимум 256 МБ свободного места во внутреннем хранилище.")
+        .setPositiveButton("Понятно",null).show();
+      return;
+    }
+    new AlertDialog.Builder(this).setTitle("Тяжёлый учебный экспорт")
+      .setMessage("24 000 вымышленных сообщений, ровно 480 000 слов и 12 документов общей величиной 36 МиБ.\n\n"
+        +"Экспорт происходит пакетами, файлы шифруются на телефоне. Итог — защищённый .tva, а не ZIP.\n\n"
+        +"Только вымышленные данные: вход в Telegram и интернет не используются. "
+        +"Потребуется несколько минут, дополнительное свободное место и заряд аккумулятора. "
+        +"Держи приложение открытым.\n\nПароль учебного файла: Vault-stress-test-only-2026")
+      .setNegativeButton("Отмена",null)
+      .setPositiveButton("Начать тест",(d,w)->{
+        exporting=true;
+        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octet-stream");
+        intent.putExtra(Intent.EXTRA_TITLE,"Vault_STRESS_480000_WORDS.tva");
+        try {startActivityForResult(intent,CREATE_HEAVY_EXPORT);}
+        catch(RuntimeException e){exporting=false;showStatus("Сохранение недоступно. Повтори попытку.");}
+      }).show();
+  }
+
+  private void saveHeavyExport(Uri destination){
+    if(!BuildConfig.TELEGRAM_TEST_DC || !exporting)return;
+    String provider=destination.getAuthority();
+    if(!"com.android.externalstorage.documents".equals(provider) &&
+       !"com.android.providers.downloads.documents".equals(provider) &&
+       !"com.android.providers.media.documents".equals(provider)){
+      exporting=false;
+      boolean deleted=false;
+      try{deleted=getContentResolver().delete(destination,null,null)>0;}catch(Exception ignored){}
+      showStatus("Выбери локальную память телефона, не облачный диск."
+        +(deleted?"":" Проверь, не остался ли пустой файл."));
+      return;
+    }
+    clearUi();
+    message("Создаём 480 000 вымышленных слов и 36 МиБ файлов. Данные шифруются пакетами. "
+      +"Вход в Telegram не выполняется. Держи приложение открытым.");
+    showStatus("Тяжёлый тест: начинаем…");
+    worker.execute(()->{
+      char[] pass="Vault-stress-test-only-2026".toCharArray();
+      boolean progressErased=false;
+      try {
+        ExportEngine.Summary summary;
+        try(OutputStream stream=getContentResolver().openOutputStream(destination,"w")){
+          if(stream==null)throw new IOException("Не удалось создать локальный файл");
+          summary=new ExportEngine(this,(ExportEngine.Transport)new HeavyMockTdlib(this),
+            this::showStatus).export(HeavyMockTdlib.CHAT_ID,stream,pass);
+        }
+        if(!summary.historyFinished || summary.messages!=HeavyMockTdlib.MESSAGE_COUNT ||
+            summary.media!=HeavyMockTdlib.MEDIA_COUNT ||summary.missing!=0)
+          throw new IOException("Тяжёлый экспорт не содержит все учебные данные");
+        int count;
+        try(InputStream check=getContentResolver().openInputStream(destination)){
+          if(check==null)throw new IOException("Невозможно открыть архив для проверки");
+          count=ArchiveVerifier.verify(check,pass);
+        }
+        if(count<HeavyMockTdlib.MEDIA_COUNT)
+          throw new IOException("В защищённом архиве не хватает учебных файлов");
+        byte[] secret=null;
+        try{
+          secret=new SessionSecrets(this).getOrCreate();
+          try(ResumeStore staging=new ResumeStore(new File(getFilesDir(),"export-progress"),
+              HeavyMockTdlib.CHAT_ID,secret)) {
+            if(staging.state().historyFinished){
+              staging.erase();
+              progressErased=true;
+            }
+          }
+        }finally{if(secret!=null)Arrays.fill(secret,(byte)0);}
+        final boolean clean=progressErased;
+        showStatus("Успех: 480 000 слов и 12 учебных файлов сохранены и проверены.");
+        runOnUiThread(()->{
+          if(isFinishing() || isDestroyed())return;
+          clearUi();
+          message("Готово! Защищённый .tva записан в выбранную папку. "
+            +"24 000 сообщений, 480 000 слов, 12 файлов (36 МиБ)."
+            +(clean?"":" Внимание: временный зашифрованный прогресс ещё не очищен."));
+          message("Пароль: Vault-stress-test-only-2026. В архиве только вымышленные данные.");
+          button("На главный экран",this::showWelcome);
+          new AlertDialog.Builder(this).setTitle("Тяжёлый тест завершён")
+            .setMessage("История полностью выгружена, архив проверен повторным чтением. "
+              +"Никаких данных Telegram не использовалось.")
+            .setPositiveButton("Понятно",null).show();
+        });
+      } catch(Exception failure){
+        boolean deleted=false;
+        try{deleted=getContentResolver().delete(destination,null,null)>0;}catch(Exception ignored){}
+        final boolean removed=deleted;
+        showStatus("Тяжёлый тест прерван: "+failure.getClass().getSimpleName()
+          +(removed?"":"; проверь и удали неполный файл вручную."));
+        runOnUiThread(()->{
+          clearUi();
+          message("Тест остановлен без подключения Telegram. "
+            +"Зашифрованный прогресс внутри приложения может сохраниться для повторной попытки."
+            +(removed?"":" Не удалось подтвердить удаление неполного выходного файла."));
+          button("На главный экран",this::showWelcome);
+        });
+      }finally{
+        Arrays.fill(pass,'\0');
+        exporting=false;
+      }
+    });
+  }
   private void requestSyntheticExport() {
     if(!BuildConfig.TELEGRAM_TEST_DC||td!=null||exporting){
       showStatus("Учебная проверка доступна только без подключённого Telegram.");
@@ -578,6 +697,11 @@ public final class MainActivity extends Activity {
   }
   @Override protected void onActivityResult(int request, int result, Intent data) {
     super.onActivityResult(request,result,data);
+    if(request==CREATE_HEAVY_EXPORT){
+      if(result==RESULT_OK && data!=null && data.getData()!=null)saveHeavyExport(data.getData());
+      else exporting=false;
+      return;
+    }
     if(request==CREATE_SYNTHETIC_EXPORT){
       if(result==RESULT_OK&&data!=null&&data.getData()!=null)saveSyntheticExport(data.getData());
       else exporting=false;
