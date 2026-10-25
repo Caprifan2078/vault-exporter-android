@@ -275,6 +275,12 @@ public final class MainActivity extends Activity {
         }
         if(count<MegaMockTdlib.MEDIA_COUNT)
           throw new IOException("В защищённом архиве не хватает учебных файлов");
+        // Independent streaming acceptance: verify all 54,000 message bodies,
+        // >1M actual words, every file signature and multi-media preview.
+        try(InputStream check=getContentResolver().openInputStream(destination)){
+          if(check==null)throw new IOException("Cannot reopen finished mega archive");
+          MegaArchiveVerifier.verify(check,pass);
+        }
         byte[] secret=null;
         try{
           secret=new SessionSecrets(this).getOrCreate();
