@@ -1,4 +1,4 @@
-name: Build isolated Vault Exporter TEST-DC APK (public TEST credentials)
+name: Build installable synthetic OFFLINE Vault Exporter APK
 on:
   push:
     branches: [work/exporter-apk-build-20261025]
@@ -23,15 +23,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Use Telegram public TEST-ONLY API credentials (never production)
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Published by Telegram Desktop for developer tests only.
-          # Never use these keys for production or important accounts.
-          test "${{ github.ref_name }}" = 'work/exporter-apk-build-20261025'
-          install -d -m 700 "$HOME/.gradle"
-          (umask 077; printf 'telegramApiId=%s\ntelegramApiHash=%s\n' '17349' '344583e45741c457fe1862106095a5eb' > "$HOME/.gradle/gradle.properties")
       - name: Install Android toolchain
         shell: bash
         run: |
@@ -78,15 +69,12 @@ jobs:
           echo "PASS: trial APK has no Android INTERNET permission"
           "$AAPT" dump badging "$APK" | grep -F "package: name='org.vault.exporter.sandbox.testnet'"
           mkdir -p dist
-          cp "$APK" dist/VaultExporter-TEST-DC.apk
+          cp "$APK" dist/VaultExporter-OFFLINE-TRAINING.apk
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
           echo "OFFLINE SYNTHETIC CHAT TRIAL ONLY. No INTERNET permission; real Telegram export is not enabled." > dist/IMPORTANT.txt
-      - name: Erase credentials after job
-        if: always()
-        run: rm -f "$HOME/.gradle/gradle.properties"
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: VaultExporter-NETWORK-TEST-APK-NOT-PRODUCTION
+          name: VaultExporter-REAL-OFFLINE-MOCK-APK
           path: dist/
           retention-days: 7
