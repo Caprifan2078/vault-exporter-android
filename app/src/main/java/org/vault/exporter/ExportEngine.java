@@ -393,15 +393,12 @@ public final class ExportEngine {
           archive.writeStream(pageName,stage.openPage(page));
           String indexName=String.format(Locale.ROOT,"media-index/page-%06d.jsonl",page);
           // Read one page of encrypted media references and emit authenticated staging files.
-          ByteArrayOutputStream buffer=new ByteArrayOutputStream();
-          try(InputStream data=stage.openIndex(page)){
-            byte[] scratch=new byte[65536];int read;
-            while((read=data.read(scratch))!=-1){buffer.write(scratch,0,read);
-              if(buffer.size()>16*1024*1024)throw new IOException("Индекс медиа слишком велик");}
-          }
-          byte[] mediaIndex=buffer.toByteArray();
-          archive.writeBytes(indexName,mediaIndex);
-          try(BufferedReader reader=new BufferedReader(new StringReader(new String(mediaIndex,StandardCharsets.UTF_8)))){
+          // Avoid materializing the entire per-page media index in RAM.
+          // Streaming a verified encrypted index twice costs I/O but keeps
+          // memory bounded even for unusually large multi-attachment pages.
+          archive.writeStream(indexName,stage.openIndex(page));
+          try(BufferedReader reader=new BufferedReader(new InputStreamReader(
+              stage.openIndex(page),StandardCharsets.UTF_8))){
             String row;
             while((row=reader.readLine())!=null){if(row.isEmpty())continue;
               JSONObject media=new JSONObject(row);
