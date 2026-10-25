@@ -10,7 +10,7 @@ public final class ArchiveWriter implements Closeable {
   private final ZipOutputStream zip;
   public ArchiveWriter(OutputStream target, char[] passphrase) throws Exception {
     zip = new ZipOutputStream(new ChunkedVault.Encrypt(target, passphrase), StandardCharsets.UTF_8);
-    zip.setLevel(ZipOutputStream.DEFLATED);
+    zip.setLevel(Deflater.DEFAULT_COMPRESSION);
   }
   public void writeBytes(String name, byte[] content) throws IOException {
     validate(name);
@@ -31,6 +31,14 @@ public final class ArchiveWriter implements Closeable {
     StringBuilder hex=new StringBuilder();
     for(byte b: hash.digest()) hex.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
     return hex.toString();
+  }
+  /** Videos, OGG, JPEG, WEBP and most documents are already compressed.
+   * ZIP level 0 preserves streaming/ZIP64 support without recompressing gigabytes
+   * of incompressible data and burning phone CPU/battery. Text still uses level 6. */
+  public String writeMediaStream(String name, InputStream encryptedStagedInput)throws Exception {
+    zip.setLevel(Deflater.NO_COMPRESSION);
+    try {return writeStream(name,encryptedStagedInput);}
+    finally {zip.setLevel(Deflater.DEFAULT_COMPRESSION);}
   }
   public String writeMedia(String name, File input) throws Exception {
     validate(name);
