@@ -1,0 +1,58 @@
+name: Export exact source snapshot for handoff
+on:
+  push:
+    branches: [work/exporter-apk-build-20261025]
+    paths: ['.github/workflows/transfer-source-snapshot.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout transfer branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Generate exact source snapshot with integrity list
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/repository
+          python3 - <<'PY'
+          import subprocess, pathlib, shutil, hashlib
+          root=pathlib.Path.cwd()
+          out=root/'output'/'repository'
+          paths=subprocess.check_output(['git','ls-files','-z']).split(b'\0')
+          count=0
+          for b in paths:
+              if not b: continue
+              rel=pathlib.Path(b.decode('utf-8'))
+              sensitive=('.env','keystore','secret','.jks','.p12','.pfx','private_key','credentials')
+              if any(x in str(rel).lower() for x in sensitive):
+                  print('SKIP SENSITIVE NAME:',rel)
+                  continue
+              src=root/rel
+              if not src.is_file() or src.is_symlink(): continue
+              dst=out/rel
+              dst.parent.mkdir(parents=True,exist_ok=True)
+              shutil.copyfile(src,dst)
+              count+=1
+          files=sorted(x for x in out.rglob('*') if x.is_file())
+          with (root/'output'/'SHA256SUMS.txt').open('w') as f:
+              for p in files:
+                  digest=hashlib.sha256(p.read_bytes()).hexdigest()
+                  f.write(digest+'  repository/'+p.relative_to(out).as_posix()+'\n')
+          (root/'output'/'COMMIT.txt').write_text(subprocess.check_output(['git','rev-parse','HEAD'],text=True))
+          (root/'output'/'COUNT.txt').write_text(str(count))
+          print('TRACKED_FILES:',count)
+          PY
+          (cd output && tar -czf source_tree.tar.gz repository)
+          (cd output && sha256sum source_tree.tar.gz > source_tree.tar.gz.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VaultExporter-FULL-SOURCE-SNAPSHOT
+          path: output/
+          retention-days: 14
+          if-no-files-found: error
