@@ -580,7 +580,7 @@ public final class ExportEngine {
             while((row=reader.readLine())!=null){if(row.isEmpty())continue;
               JSONObject media=new JSONObject(row);
               String name=media.getString("path");
-              String hash=archive.writeStream(name,stage.openMedia(media.getLong("message_id"),media.getInt("file_id")));
+              String hash=archive.writeMediaStream(name,stage.openMedia(media.getLong("message_id"),media.getInt("file_id")));
               if(!hash.equals(media.getString("sha256")))throw new SecurityException("Медиа изменилось: "+name);
               files++;
             }
