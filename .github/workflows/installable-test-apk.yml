@@ -1,4 +1,4 @@
-name: Build Vault Exporter installable Telegram TEST APK
+name: Build isolated Vault Exporter TEST-DC APK (public TEST credentials)
 on:
   push:
     branches: [work/exporter-apk-build-20261025]
@@ -23,19 +23,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Validate developer credentials (required for real Telegram login)
-        env:
-          VAULT_API_ID: ${{ secrets.VAULT_TELEGRAM_API_ID }}
-          VAULT_API_HASH: ${{ secrets.VAULT_TELEGRAM_API_HASH }}
+      - name: Use Telegram public TEST-ONLY API credentials (never production)
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "$VAULT_API_ID" =~ ^[1-9][0-9]*$ ]] || [[ ! "$VAULT_API_HASH" =~ ^[0-9a-fA-F]{32}$ ]]; then
-            echo "::error::Missing valid developer API ID/hash. Set VAULT_TELEGRAM_API_ID and VAULT_TELEGRAM_API_HASH in repo Actions secrets. Do not paste into chats or commit."
-            exit 68
-          fi
+          # Published by Telegram Desktop for developer tests only.
+          # Never use these keys for production or important accounts.
+          test "${{ github.ref_name }}" = 'work/exporter-apk-build-20261025'
           install -d -m 700 "$HOME/.gradle"
-          (umask 077; printf 'telegramApiId=%s\ntelegramApiHash=%s\n' "$VAULT_API_ID" "$VAULT_API_HASH" > "$HOME/.gradle/gradle.properties")
+          (umask 077; printf 'telegramApiId=%s\\ntelegramApiHash=%s\\n' '17349' '344583e45741c457fe1862106095a5eb' > "$HOME/.gradle/gradle.properties")
       - name: Install Android toolchain
         shell: bash
         run: |
