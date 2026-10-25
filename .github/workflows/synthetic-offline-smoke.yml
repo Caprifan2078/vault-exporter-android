@@ -20,7 +20,7 @@ jobs:
           name: VaultExporter-NETWORK-TEST-APK-NOT-PRODUCTION
           run-id: '40237477008'
           repository: adolfmerkel196-ux/vault-exporter-android
-          github-token: \${{ github.token }}
+          github-token: ${{ github.token }}
           path: ci-apk
       - name: Check compiled APK artifact hash
         shell: bash
