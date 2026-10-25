@@ -142,11 +142,25 @@ public final class ExportEngine {
     int dot=original.lastIndexOf('.');
     if(dot>0){String candidate=original.substring(dot).toLowerCase(Locale.ROOT);
       if(candidate.matches("\\.[a-z0-9]{1,8}"))return candidate;}
+    if("audio".equals(category)) {
+      JSONObject track=object(content,"audio");
+      String musicName=track==null?"":track.optString("file_name","");
+      int extAt=musicName.lastIndexOf('.');
+      if(extAt>0){
+        String ext=musicName.substring(extAt).toLowerCase(Locale.ROOT);
+        if(ext.matches("\\.[a-z0-9]{1,8}"))return ext;
+      }
+      String mediaType=track==null?"":track.optString("mime_type","");
+      if("audio/ogg".equals(mediaType))return ".ogg";
+      if("audio/wav".equals(mediaType)||"audio/x-wav".equals(mediaType))return ".wav";
+      if("audio/flac".equals(mediaType))return ".flac";
+      if("audio/mp4".equals(mediaType))return ".m4a";
+      return ".mp3";
+    }
     switch(category){
       case "photo":return ".jpg";
       case "round_video":case "video":case "animation":return ".mp4";
       case "voice":return ".ogg";
-      case "audio":return ".mp3";
       case "sticker": {
         JSONObject sticker=deepest(message,"content","sticker","format");
         String stickerType=sticker==null?"stickerFormatWebp":sticker.optString("@type","");
