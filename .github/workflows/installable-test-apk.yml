@@ -61,7 +61,7 @@ jobs:
           python3 scripts/verify_tdlib_elf.py app/src/main/jniLibs/arm64-v8a/libtdjson.so
           python3 scripts/preflight.py
           python3 scripts/security_gate.py
-      - name: Build real network-capable TEST DC APK
+      - name: Build genuinely OFFLINE synthetic chat trial APK
         shell: bash
         run: |
           set -euo pipefail
@@ -71,12 +71,16 @@ jobs:
           unzip -t "$APK" | tail -1
           unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/libtdjson.so'
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
-          "$AAPT" dump permissions "$APK" | grep -F 'android.permission.INTERNET'
+          if "$AAPT" dump permissions "$APK" | grep -F 'android.permission.INTERNET'; then
+            echo "::error::Synthetic trial must not have INTERNET permission"
+            exit 69
+          fi
+          echo "PASS: trial APK has no Android INTERNET permission"
           "$AAPT" dump badging "$APK" | grep -F "package: name='org.vault.exporter.sandbox.testnet'"
           mkdir -p dist
           cp "$APK" dist/VaultExporter-TEST-DC.apk
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
-          echo "TEST TELEGRAM ONLY. Android login and media runtime remain unverified; do not use important accounts." > dist/IMPORTANT.txt
+          echo "OFFLINE SYNTHETIC CHAT TRIAL ONLY. No INTERNET permission; real Telegram export is not enabled." > dist/IMPORTANT.txt
       - name: Erase credentials after job
         if: always()
         run: rm -f "$HOME/.gradle/gradle.properties"
