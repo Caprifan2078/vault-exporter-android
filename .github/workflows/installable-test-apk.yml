@@ -55,7 +55,7 @@ jobs:
           grep -Fx 'source_repo=tdlib/td' tdlib-build/BUILD_PROVENANCE.txt
           grep -Fx 'source_sha=ea3f69ce11aef458bfbb09869b809ede4447486f' tdlib-build/BUILD_PROVENANCE.txt
           grep -Fx 'abi=arm64-v8a' tdlib-build/BUILD_PROVENANCE.txt
-          (cd tdlib-build && sha256sum -c SHA256SUMS.txt)
+          sed 's@tdlib-verified/@tdlib-build/@g' tdlib-build/SHA256SUMS.txt | sha256sum -c -
           test "$(sha256sum tdlib-build/arm64-v8a/libtdjson.so | awk '{print $1}')" = 'a2dee806a79d036da93753d291a307c62975b1e9ad05c04aa7784d96a76e3626'
           install -D -m 0644 tdlib-build/arm64-v8a/libtdjson.so app/src/main/jniLibs/arm64-v8a/libtdjson.so
           python3 scripts/verify_tdlib_elf.py app/src/main/jniLibs/arm64-v8a/libtdjson.so
