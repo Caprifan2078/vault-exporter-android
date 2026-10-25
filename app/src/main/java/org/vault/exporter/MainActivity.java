@@ -258,6 +258,7 @@ public final class MainActivity extends Activity {
     worker.execute(()->{
       char[] pass="Vault-mega-offline-2026".toCharArray();
       boolean progressErased=false;
+      String phase="создание архива";
       try {
         ExportEngine.Summary summary;
         try(OutputStream stream=getContentResolver().openOutputStream(destination,"w")){
@@ -265,9 +266,11 @@ public final class MainActivity extends Activity {
           summary=new ExportEngine(this,(ExportEngine.Transport)new MegaMockTdlib(this),
             this::showStatus).export(MegaMockTdlib.CHAT_ID,stream,pass);
         }
+        phase="проверка количества сообщений";
         if(!summary.historyFinished || summary.messages!=MegaMockTdlib.MESSAGE_COUNT ||
             summary.media!=MegaMockTdlib.MEDIA_COUNT ||summary.missing!=0)
           throw new IOException("Тяжёлый экспорт не содержит все учебные данные");
+        phase="проверка структуры TVA";
         int count;
         try(InputStream check=getContentResolver().openInputStream(destination)){
           if(check==null)throw new IOException("Невозможно открыть архив для проверки");
@@ -275,12 +278,14 @@ public final class MainActivity extends Activity {
         }
         if(count<MegaMockTdlib.MEDIA_COUNT)
           throw new IOException("В защищённом архиве не хватает учебных файлов");
+        phase="проверка всех сообщений и форматов медиа";
         // Independent streaming acceptance: verify all 54,000 message bodies,
         // >1M actual words, every file signature and multi-media preview.
         try(InputStream check=getContentResolver().openInputStream(destination)){
           if(check==null)throw new IOException("Cannot reopen finished mega archive");
           MegaArchiveVerifier.verify(check,pass);
         }
+        phase="очистка промежуточных файлов";
         byte[] secret=null;
         try{
           secret=new SessionSecrets(this).getOrCreate();
@@ -293,7 +298,7 @@ public final class MainActivity extends Activity {
           }
         }finally{if(secret!=null)Arrays.fill(secret,(byte)0);}
         final boolean clean=progressErased;
-        showStatus("Успех: 1 080 000 слов и 12 учебных файлов сохранены и проверены.");
+        showStatus("Успех: 1 080 000 слов и 19 учебных медиафайлов сохранены и проверены.");
         runOnUiThread(()->{
           if(isFinishing() || isDestroyed())return;
           clearUi();
@@ -311,10 +316,21 @@ public final class MainActivity extends Activity {
         boolean deleted=false;
         try{deleted=getContentResolver().delete(destination,null,null)>0;}catch(Exception ignored){}
         final boolean removed=deleted;
-        showStatus("Миллион слов прерван: "+failure.getClass().getSimpleName()
-          +(removed?"":"; проверь и удали неполный файл вручную."));
+        // Diagnostics are rendered ONLY for completely fictional offline data.
+        // Never show filenames, file-system paths, API values or user data.
+        Throwable deepest=failure;
+        for(int d=0;d<5&&deepest.getCause()!=null;d++)deepest=deepest.getCause();
+        String detail=deepest.getMessage();
+        if(detail==null||detail.isEmpty())detail="причина не указана";
+        if(detail.contains("/")||detail.contains("\\\\")||detail.length()>180)
+          detail="подробности скрыты для защиты данных";
+        final String explanation="Миллион слов прерван на этапе: "+phase+
+          ". "+deepest.getClass().getSimpleName()+": "+detail+
+          (removed?"":"; проверь и удали неполный файл вручную.");
+        showStatus(explanation);
         runOnUiThread(()->{
           clearUi();
+          message(explanation);
           message("Тест остановлен без подключения Telegram. "
             +"Зашифрованный прогресс внутри приложения может сохраниться для повторной попытки."
             +(removed?"":" Не удалось подтвердить удаление неполного выходного файла."));
