@@ -10,7 +10,7 @@ permissions:
 jobs:
   large-export:
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
