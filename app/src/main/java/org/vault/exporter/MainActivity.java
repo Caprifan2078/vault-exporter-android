@@ -119,23 +119,32 @@ public final class MainActivity extends Activity {
     worker.execute(()->{
       boolean clean=false;
       try{
-        ExportEngine.Summary summary;
-        ExportEngine.Transport simulation=new LocalMockTdlib(this);
-        try(OutputStream out=getContentResolver().openOutputStream(destination,"w")){
-          if(out==null)throw new IOException("Не удалось открыть файл");
-          summary=new ExportEngine(this,simulation,this::showStatus)
-            .exportHtml(LocalMockTdlib.CHAT_ID,out);
-        }
-        if(summary.messages!=LocalMockTdlib.MESSAGE_COUNT
-            ||summary.media!=LocalMockTdlib.MEDIA_COUNT||!summary.historyFinished)
-          throw new IOException("Учебная переписка выгружена не полностью");
-        int verified;
-        try(InputStream in=getContentResolver().openInputStream(destination)){
-          if(in==null)throw new IOException("Не удалось проверить файл");
-          verified=HtmlArchiveWriter.verify(in,summary.messages,summary.media);
-        }
-        if(verified!=LocalMockTdlib.MESSAGE_COUNT)
-          throw new IOException("Ошибка проверки учебной истории");
+        // The production engine ALWAYS creates a password-encrypted .tva first.
+        // Only FICTIONAL data may be decrypted into this explicitly marked demo ZIP.
+        char[] demoPassword="Vault-fictional-offline-chat-2026".toCharArray();
+        try {
+          ByteArrayOutputStream encrypted=new ByteArrayOutputStream();
+          ExportEngine.Transport simulation=new LocalMockTdlib(this);
+          ExportEngine.Summary summary=new ExportEngine(this,simulation,this::showStatus)
+            .export(LocalMockTdlib.CHAT_ID,encrypted,demoPassword);
+          if(summary.messages!=LocalMockTdlib.MESSAGE_COUNT
+              ||summary.media!=LocalMockTdlib.MEDIA_COUNT||!summary.historyFinished)
+            throw new IOException("Учебная переписка выгружена не полностью");
+          byte[] protectedArchive=encrypted.toByteArray();
+          if(protectedArchive.length>12*1024*1024)
+            throw new IOException("Слишком большой учебный архив");
+          int entries=ArchiveVerifier.verify(new ByteArrayInputStream(protectedArchive),demoPassword);
+          if(entries<LocalMockTdlib.MEDIA_COUNT)
+            throw new IOException("Не все учебные медиа упакованы");
+          try(OutputStream out=getContentResolver().openOutputStream(destination,"w")){
+            if(out==null)throw new IOException("Не удалось открыть файл");
+            SyntheticZipWriter.write(out,protectedArchive,demoPassword);
+          }
+          try(InputStream check=getContentResolver().openInputStream(destination)){
+            if(check==null)throw new IOException("Не удалось проверить учебный ZIP");
+            SyntheticZipWriter.verify(check);
+          }
+        }finally{Arrays.fill(demoPassword,'\0');}
         byte[] key=null;
         try{
           key=new SessionSecrets(this).getOrCreate();
