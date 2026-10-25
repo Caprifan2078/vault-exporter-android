@@ -657,9 +657,25 @@ public final class MainActivity extends Activity {
           showStatus("Архив проверен. Заверши сеанс для максимальной приватности.");
         });
       } catch(Exception e) {
-        try {getContentResolver().delete(destination,null,null);}catch(Exception ignored){}
-        showStatus("Экспорт прерван: "+e.getClass().getSimpleName()+". Данные прогресса сохранены локально — выбери тот же чат и продолжи. Если неполный файл остался в папке, удали его.");
-        runOnUiThread(()-> {exporting=false;clearUi();button("Вернуться к выбору чата",()->{clearUi();showReady();});});
+        boolean unsafeCache=e instanceof ExportEngine.CachePrivacyException;
+        boolean removed=false;
+        try {removed=getContentResolver().delete(destination,null,null)>0;}
+        catch(Exception ignored) { /* Display cleanup warning, never claim success. */ }
+        final boolean partialRemoved=removed;
+        final String explanation=unsafeCache
+          ? "ВНИМАНИЕ: не удалось подтвердить удаление незашифрованного временного файла. Экспорт остановлен ради приватности. Не повторяй его до очистки данных Vault Exporter в настройках Android. Это удалит сеанс и незавершённый прогресс."
+          : "Экспорт прерван. Зашифрованный прогресс сохранён локально, можно попробовать продолжить позже.";
+        showStatus(explanation+(partialRemoved?"":" Также проверь папку сохранения и удали неполный файл вручную."));
+        runOnUiThread(()-> {
+          exporting=false;clearUi();
+          message(explanation);
+          if(!partialRemoved)message("Удаление неполного выходного архива не подтверждено. Проверь выбранную папку.");
+          button("Вернуться к выбору чата",()->{clearUi();showReady();});
+          if(unsafeCache && !isFinishing() && !isDestroyed())
+            new AlertDialog.Builder(this).setTitle("Защита личных данных")
+              .setMessage(explanation)
+              .setCancelable(false).setPositiveButton("Понятно",null).show();
+        });
       } finally { Arrays.fill(password,'\0'); }
     });
   }
