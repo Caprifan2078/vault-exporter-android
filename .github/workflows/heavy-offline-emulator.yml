@@ -1,0 +1,48 @@
+name: Large 480k-word Android offline export stress
+on:
+  push:
+    branches: [work/exporter-apk-build-20261025]
+    paths: ['.github/workflows/heavy-offline-emulator.yml', 'ci/heavy-offline-apk-smoke.sh']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  large-export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: VaultExporter-REAL-OFFLINE-MOCK-APK
+          run-id: '40241501939'
+          repository: adolfmerkel196-ux/vault-exporter-android
+          github-token: ${{ github.token }}
+          path: ci-apk
+      - name: Validate exact APK hash and no INTERNET permission
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd ci-apk && sha256sum -c SHA256SUMS.txt)
+          echo "APK_UNDER_TEST=$GITHUB_WORKSPACE/ci-apk/VaultExporter-OFFLINE-TRAINING.apk" >> "$GITHUB_ENV"
+      - name: Android emulator toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          MGR=$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -1)
+          yes | "$MGR" --licenses >/dev/null || true
+          "$MGR" --sdk_root="$ANDROID_HOME" --install 'platforms;android-35' 'platform-tools' 'emulator' 'system-images;android-35;google_apis;x86_64'
+          if test -e /dev/kvm; then sudo chmod 666 /dev/kvm; fi
+      - name: Run 480k-word encrypted export on Android without Internet
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          heap-size: 256M
+          disable-animations: true
+          emulator-boot-timeout: 900
+          script: bash ci/heavy-offline-apk-smoke.sh
