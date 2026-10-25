@@ -1,0 +1,35 @@
+name: Create isolated source snapshot for migration
+on:
+  push:
+    branches:
+      - handoff/full-transfer-20261025
+    paths:
+      - .github/workflows/create-handoff-source-snapshot.yml
+permissions:
+  contents: read
+jobs:
+  source-snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 75
+          persist-credentials: false
+      - name: Archive EXACT pre-handoff development source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p snapshot
+          SNAPSHOT_REF=HEAD^
+          git rev-parse "$SNAPSHOT_REF" > snapshot/SOURCE_COMMIT_SHA.txt
+          git archive --format=zip --output=snapshot/Vault_Exporter_WORKING_SOURCE.zip "$SNAPSHOT_REF"
+          git log -n 50 --date=short --pretty=format:'%H | %ad | %s' "$SNAPSHOT_REF" > snapshot/GIT_LOG_LAST_50.txt
+          ( cd snapshot && sha256sum Vault_Exporter_WORKING_SOURCE.zip > SHA256SUMS.txt )
+          unzip -t snapshot/Vault_Exporter_WORKING_SOURCE.zip | tail -1
+          printf '%s\n' 'Private source snapshot for migration only.' 'Source archive is git archive of development HEAD before this handoff workflow.' 'Includes tracked repository files; excludes .git, GitHub Secrets and local working-tree files.' > snapshot/README.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vault-exporter-migration-source-snapshot
+          path: snapshot/
+          retention-days: 3
