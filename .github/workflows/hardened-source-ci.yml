@@ -6,6 +6,8 @@ on:
       - 'app/**'
       - 'tests/**'
       - 'integration-jvm/**'
+      - 'ci-contract/**'
+      - 'RUN_ALL_OFFLINE.sh'
       - 'native-host-test/**'
       - 'transport-jvm/**'
       - '.github/workflows/hardened-source-ci.yml'
@@ -26,6 +28,8 @@ jobs:
         run: bash tests/RUN_TESTS_OFFLINE.sh
       - name: Real hardened ExportEngine vs fake TDLib with injected outages
         run: bash integration-jvm/RUN_INTEGRATION_JVM.sh
+      - name: Validate current workflow safety contracts
+        run: python3 ci-contract/verify_ci_contract.py
       - name: TDLib transport lifecycle and native JNI Unicode
         run: |
           bash transport-jvm/RUN_TRANSPORT_JVM.sh
