@@ -1,0 +1,48 @@
+name: Export complete source snapshot for chat migration
+on:
+  push:
+    branches: [work/vault-exporter-replayed-20261024]
+    paths:
+      - '.github/workflows/archive-source-for-migration.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Package tracked sources, without git credentials or environment secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, subprocess, zipfile, hashlib, json
+          from pathlib import Path
+          files = subprocess.check_output(['git','ls-files','-z']).split(b'\0')
+          paths = [os.fsdecode(p) for p in files if p]
+          forbidden = re.compile(r'(^|/)(\.env(\..*)?|.*\.keystore|.*\.jks|.*\.p12|id_rsa|id_ed25519|.*token.*|.*secret.*)$',re.I)
+          excluded = [p for p in paths if forbidden.search(p)]
+          allowed = [p for p in paths if not forbidden.search(p)]
+          with zipfile.ZipFile('vault-github-sources.zip','w',compression=zipfile.ZIP_DEFLATED,compresslevel=8) as z:
+              for name in allowed:
+                  z.write(name, name)
+          manifest = {'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                      'files_in_snapshot':len(allowed),'excluded_paths':excluded,
+                      'sha256':hashlib.sha256(Path('vault-github-sources.zip').read_bytes()).hexdigest()}
+          Path('SOURCE_SNAPSHOT_META.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
+          print('Tracked source files:',len(allowed),'excluded paths:',len(excluded))
+          PY
+          unzip -t vault-github-sources.zip | tail -1
+      - name: Store private short-lived handoff snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: vault-complete-github-sources-for-handoff
+          path: |
+            vault-github-sources.zip
+            SOURCE_SNAPSHOT_META.json
+          retention-days: 2
