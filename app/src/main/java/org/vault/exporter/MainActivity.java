@@ -346,7 +346,7 @@ public final class MainActivity extends Activity {
   }
   private void showReady() {
     selected = message("Переписка не выбрана");
-    button("1. Выбрать чат",this::chooseChat);
+    button("1. Выбрать переписку",this::chooseChat);
     button("2. Скачать всё / продолжить экспорт",this::requestPassphrase);
     button("Очистить незавершённый экспорт выбранного чата",this::confirmResetProgress);
     button("Завершить только этот Telegram-сеанс", this::confirmLogout);
