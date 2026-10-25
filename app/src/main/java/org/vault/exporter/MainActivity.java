@@ -74,8 +74,10 @@ public final class MainActivity extends Activity {
       button("Создать проверочный архив .tva (офлайн)", this::requestOfflineFixture);
     if (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)
       button("Проверить нативную TDLib (офлайн)", this::probeNativeTdlibOffline);
-    if (!BuildConfig.DEBUG) {
-      button(BuildConfig.TELEGRAM_TEST_DC ? "Подключить тестовый Telegram" : "Подключить настоящий Telegram", this::askBeforeConnect);
+    if (BuildConfig.TELEGRAM_TEST_DC) {
+      message("В учебной версии вход в Telegram отключён. Интернет не требуется: нажми кнопку учебного чата.");
+    } else if (!BuildConfig.DEBUG) {
+      button("Подключить настоящий Telegram", this::askBeforeConnect);
     } else {
       message("СТРОГО ОФЛАЙН-ДЕМО: доступ к Интернету заблокирован разрешениями Android. Вход в Telegram отключён.");
     }
@@ -315,6 +317,10 @@ public final class MainActivity extends Activity {
     }
   }
   private void askBeforeConnect() {
+    if(BuildConfig.TELEGRAM_TEST_DC){
+      showStatus("Учебная сборка не подключается к Telegram. Используй вымышленный чат.");
+      return;
+    }
     if (BuildConfig.DEBUG) { showStatus("В демонстрационной сборке доступ к Telegram отключён."); return; }
     if (td != null) { showStatus("Подключение уже началось."); return; }
     if (!BuildConfig.TELEGRAM_TEST_DC && !BuildConfig.ALLOW_PRODUCTION) {
