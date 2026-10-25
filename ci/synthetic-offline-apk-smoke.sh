@@ -82,11 +82,12 @@ fi
 if find_button "save" >/dev/null 2>&1; then tap_found "save"
 elif find_button "сохранить" >/dev/null 2>&1; then tap_found "сохранить"
 else echo "No system document save action";cat /tmp/vault-mock/window.xml;exit 43;fi
-FILE=""
-for attempt in $(seq 1 25);do
-  FILE="$(adb shell find /sdcard -iname 'Vault*zip' 2>/dev/null | head -1 | tr -d '\r')"
-  if [[ -n "$FILE" ]];then
-    if adb pull "$FILE" /tmp/vault-mock/out.zip >/dev/null 2>&1 &&
+# On Android /sdcard may be a symlink; 'find' does not follow it by default.
+# Read the file straight from the Downloads path chosen by DocumentsUI.
+FILE="/sdcard/Download/Vault_УЧЕБНАЯ_ПЕРЕПИСКА.zip"
+for attempt in $(seq 1 30);do
+  if adb shell test -s "$FILE";then
+    if adb exec-out cat "$FILE" > /tmp/vault-mock/out.zip &&
       unzip -t /tmp/vault-mock/out.zip >/dev/null 2>&1;then break;fi
   fi
   sleep 2
