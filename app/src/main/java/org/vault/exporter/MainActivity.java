@@ -345,12 +345,12 @@ public final class MainActivity extends Activity {
     message("Коды и пароль входа используются только для авторизации через TDLib; приложение не использует сервер разработчика.");
   }
   private void showReady() {
-    selected = message("Переписка не выбрана");
+    selected=message("Чат ещё не выбран");
     button("1. Выбрать переписку",this::chooseChat);
-    button("2. Скачать всё / продолжить экспорт",this::requestPassphrase);
-    button("Очистить незавершённый экспорт выбранного чата",this::confirmResetProgress);
-    button("Завершить только этот Telegram-сеанс", this::confirmLogout);
-    message("Для поддерживаемых типов фото и видео TDLib скачает исходные файлы, даже если кэш пуст. Неизвестные типы вложений останавливают экспорт с сохранением прогресса, чтобы архив не был ложно объявлен полным.");
+    button("2. Скачать зашифрованный архив",this::requestPassphrase);
+    message("Приложение загружает доступные фото, видео и документы через Telegram, в том числе отсутствующие в кэше. Пароль защищает сохранённый архив.");
+    button("Завершить сеанс экспортёра",this::confirmLogout);
+    button("Если загрузка не удалась: удалить её прогресс",this::confirmResetProgress);
   }
   private void chooseChat() {
     showStatus("Загружаем список чатов…");
