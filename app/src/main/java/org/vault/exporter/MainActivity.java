@@ -914,7 +914,9 @@ public final class MainActivity extends Activity {
         final boolean partialRemoved=removed;
         final String explanation=unsafeCache
           ? "ВНИМАНИЕ: не удалось подтвердить удаление незашифрованного временного файла. Экспорт остановлен ради приватности. Не повторяй его до очистки данных Vault Exporter в настройках Android. Это удалит сеанс и незавершённый прогресс."
-          : "Экспорт прерван. Зашифрованный прогресс сохранён локально, можно попробовать продолжить позже.";
+          : e instanceof ExportEngine.StorageCapacityException
+            ? ((ExportEngine.StorageCapacityException)e).userMessage()
+            : "Экспорт прерван. Зашифрованный прогресс сохранён локально, можно попробовать продолжить позже.";
         showStatus(explanation+(partialRemoved?"":" Также проверь папку сохранения и удали неполный файл вручную."));
         runOnUiThread(()-> {
           exporting=false;clearUi();
