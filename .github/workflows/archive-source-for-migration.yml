@@ -4,6 +4,8 @@ on:
     branches: [work/vault-exporter-replayed-20261024]
     paths:
       - '.github/workflows/archive-source-for-migration.yml'
+      - 'ci-contract/**'
+      - '.github/workflows/hardened-source-ci.yml'
   workflow_dispatch:
 permissions:
   contents: read
