@@ -405,7 +405,7 @@ public final class ExportEngine {
         anim.optString("mime_type","video/mp4"),"","preview_animation",3,mid);
       if(audio!=null)attach(result,object(audio,"audio"),"audio",
         audio.optString("mime_type","audio/mpeg"),"","preview_audio",4,mid);
-      if(result.isEmpty() && !previewType.isEmpty()
+      if(result.isEmpty()
           && !("linkPreviewTypeArticle".equals(previewType)||"linkPreviewTypeWebApp".equals(previewType)))
         throw new IOException("messageText: непроверенный предпросмотр ссылки "+previewType+" в "+mid);
       return result;
