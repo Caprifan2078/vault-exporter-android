@@ -1,0 +1,142 @@
+name: Disposable-account REAL Telegram QA APK (private, not release)
+# Run only with explicit opt-in (manual approval or signed-off request file).
+on:
+  workflow_dispatch:
+    inputs:
+      approve_disposable_test_account:
+        description: 'Only a disposable controlled test account; unofficial client risk accepted'
+        required: true
+        type: boolean
+        default: false
+  push:
+    branches: [qa/disposable-real-telegram-20261102]
+    paths: ['ci/APPROVED_QA_BUILD_REQUEST.txt']
+permissions:
+  contents: read
+jobs:
+  qa:
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.approve_disposable_test_account == true) || github.event_name == 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      TD_SOURCE_SHA: ea3f69ce11aef458bfbb09869b809ede4447486f
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require explicit one-file approval on push
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = 'push' ]; then
+            test -f ci/APPROVED_QA_BUILD_REQUEST.txt
+            grep -Fx 'I_APPROVE_DISPOSABLE_ACCOUNT_QA_20261102' ci/APPROVED_QA_BUILD_REQUEST.txt
+          fi
+      - name: Check developer API credentials without printing them
+        shell: bash
+        env:
+          ORG_GRADLE_PROJECT_telegramApiId: ${{ secrets.TELEGRAM_API_ID }}
+          ORG_GRADLE_PROJECT_telegramApiHash: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          ident=os.environ.get('ORG_GRADLE_PROJECT_telegramApiId','')
+          token=os.environ.get('ORG_GRADLE_PROJECT_telegramApiHash','')
+          if (not re.fullmatch(r'[1-9][0-9]*',ident) or ident=='1' or
+              not re.fullmatch(r'[a-fA-F0-9]{32}',token) or token=='0'*32):
+              raise SystemExit('STOP: configure your own TELEGRAM_API_ID/HASH in Actions secrets')
+          print('PASS: developer credentials present; no values printed')
+          PY
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Run local static QA checks before expensive work
+        run: |
+          python3 scripts/security_gate.py
+          python3 tests/RUN_QA_PRODUCTION_SAFETY_TESTS.py
+          python3 tests/RUN_BUILD_SAFETY_TESTS.py
+      - name: Build pinned official TDLib JSON for ARM64 from source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/tdlib/td.git upstream-tdlib
+          git -C upstream-tdlib checkout --detach "$TD_SOURCE_SHA"
+          test "$(git -C upstream-tdlib rev-parse HEAD)" = "$TD_SOURCE_SHA"
+          python3 scripts/prepare_tdlib_android.py upstream-tdlib/example/android/Dockerfile
+          mkdir -p tdlib-out
+          (cd upstream-tdlib/example/android && DOCKER_BUILDKIT=1 docker build \
+            --build-arg "COMMIT_HASH=$TD_SOURCE_SHA" \
+            --build-arg 'TDLIB_INTERFACE=JSON' \
+            --output "type=local,dest=$GITHUB_WORKSPACE/tdlib-out" .)
+          ZIP=$(find tdlib-out -maxdepth 2 -type f -name 'tdlib.zip' -print -quit)
+          test -n "$ZIP" && test -s "$ZIP"
+          mkdir -p tdlib-unpacked
+          unzip -q "$ZIP" -d tdlib-unpacked
+          SO=$(find tdlib-unpacked -type f -path '*/arm64-v8a/libtdjson.so' -print -quit)
+          test -n "$SO" && test -s "$SO"
+          python3 scripts/verify_tdlib_elf.py "$SO"
+          install -D -m 0644 "$SO" app/src/main/jniLibs/arm64-v8a/libtdjson.so
+          python3 scripts/preflight.py
+      - name: Run fake-data export, recovery and JNI tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/RUN_TESTS_OFFLINE.sh
+          bash integration-jvm/RUN_INTEGRATION_JVM.sh
+          bash transport-jvm/RUN_TRANSPORT_JVM.sh
+          bash native-host-test/RUN_NATIVE_HOST_TEST.sh
+      - name: Install Android SDK, NDK and CMake
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_MANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -1)
+          test -x "$SDK_MANAGER"
+          yes | "$SDK_MANAGER" --licenses >/dev/null || true
+          "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" --install \
+            'platforms;android-35' 'build-tools;35.0.0' 'ndk;25.2.9519653' 'cmake;3.22.1'
+      - name: Compile isolated QA production APK with developer credentials
+        shell: bash
+        env:
+          ORG_GRADLE_PROJECT_telegramApiId: ${{ secrets.TELEGRAM_API_ID }}
+          ORG_GRADLE_PROJECT_telegramApiHash: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          set -euo pipefail
+          gradle --no-daemon -PtelegramEnvironment=production \
+            -PapproveProductionBuild=true :app:assembleQaProduction
+      - name: Validate application identity, permissions and packaged TDLib
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/qaProduction/app-qaProduction.apk
+          test -s "$APK"
+          unzip -t "$APK" | tail -1
+          unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/libtdjson.so'
+          unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/libvaultbridge.so'
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
+          "$AAPT" dump badging "$APK" | grep -F "package: name='org.vault.exporter.qa'"
+          "$AAPT" dump permissions "$APK" | grep -F 'android.permission.INTERNET'
+          if "$AAPT" dump permissions "$APK" | grep -E 'READ_CONTACTS|READ_SMS|MANAGE_EXTERNAL_STORAGE'; then
+            echo 'STOP: unexpected Android permission'; exit 83
+          fi
+          BC=app/build/generated/source/buildConfig/qaProduction/org/vault/exporter/BuildConfig.java
+          grep -Eq 'TELEGRAM_TEST_DC = false;' "$BC"
+          grep -Eq 'ALLOW_PRODUCTION = true;' "$BC"
+          grep -Eq 'QA_PRODUCTION = true;' "$BC"
+          grep -Eq 'DEBUG = false;' "$BC"
+          sha256sum "$APK" > QA_APK_SHA256.txt
+          printf '%s\n' 'ALPHA QA, NOT audited, not a release.' \
+            'Use a disposable controlled Telegram test account only.' \
+            'No real Telegram login/export has been verified by CI.' \
+            'Developer API configuration is embedded in this private build.' > QA_NOT_A_RELEASE.txt
+      - name: Private QA APK for one day only, never publish a release
+        uses: actions/upload-artifact@v4
+        with:
+          name: DISPOSABLE-REAL-TG-QA-APK-NOT-RELEASE
+          path: |
+            app/build/outputs/apk/qaProduction/app-qaProduction.apk
+            QA_APK_SHA256.txt
+            QA_NOT_A_RELEASE.txt
+          retention-days: 1

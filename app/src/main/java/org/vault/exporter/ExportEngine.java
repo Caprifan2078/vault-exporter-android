@@ -334,7 +334,7 @@ public final class ExportEngine {
     if("messagePaidMedia".equals(kind)){
       JSONArray media=c.optJSONArray("media");
       if(media==null||media.length()==0)
-        throw new IOException("Пустой список платных медиа "+mid);
+        throw new IOException("messagePaidMedia: пустой или недоступный список медиа "+mid);
       for(int i=0;i<media.length();i++){
         JSONObject item=media.optJSONObject(i);
         String mediaKind=item==null?"":item.optString("@type","");
@@ -346,12 +346,13 @@ public final class ExportEngine {
           attach(result,object(v,"video"),"video",
             v==null?"video/mp4":v.optString("mime_type","video/mp4"),
             "","paid_video",i,mid);
-        }else throw new IOException("Медиа скрыто или тип не поддержан: "+mediaKind+" в "+mid);
+        }else throw new IOException("messagePaidMedia: медиа скрыто или тип не поддержан: "+mediaKind+" в "+mid);
       }
       return result;
     }
     if("messageChatChangePhoto".equals(kind)){
       JSONObject p=c.optJSONObject("photo");
+      if(p==null)throw new IOException("messageChatChangePhoto: исходное фото недоступно: "+mid);
       attach(result,originalPhoto(p),"photo","image/jpeg","","chat_photo",0,mid);
       JSONObject animation=p==null?null:p.optJSONObject("animation");
       if(animation!=null){
@@ -366,7 +367,12 @@ public final class ExportEngine {
     if("messageText".equals(kind)){
       JSONObject preview=c.optJSONObject("link_preview");
       if(preview==null)return result;
-      String previewType=preview.optString("type","");
+      // TDLib exposes link-preview variants as nested type objects in some versions.
+      // Reject unrecognized previews with no restored original, not silent success.
+      JSONObject nestedPreviewType=preview.optJSONObject("type");
+      String previewType=nestedPreviewType!=null
+        ? nestedPreviewType.optString("@type","")
+        : preview.optString("@type",preview.optString("type",""));
       JSONObject p=preview.optJSONObject("photo"),v=preview.optJSONObject("video");
       JSONObject doc=preview.optJSONObject("document"),anim=preview.optJSONObject("animation");
       JSONObject audio=preview.optJSONObject("audio");
@@ -399,9 +405,9 @@ public final class ExportEngine {
         anim.optString("mime_type","video/mp4"),"","preview_animation",3,mid);
       if(audio!=null)attach(result,object(audio,"audio"),"audio",
         audio.optString("mime_type","audio/mpeg"),"","preview_audio",4,mid);
-      if(result.isEmpty() && !previewType.isEmpty()
+      if(result.isEmpty()
           && !("linkPreviewTypeArticle".equals(previewType)||"linkPreviewTypeWebApp".equals(previewType)))
-        throw new IOException("Непроверенный предпросмотр ссылки "+previewType+" в "+mid);
+        throw new IOException("messageText: непроверенный предпросмотр ссылки "+previewType+" в "+mid);
       return result;
     }
     if(!isVerifiedNonMediaContent(kind))

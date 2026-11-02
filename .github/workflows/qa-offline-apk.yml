@@ -1,0 +1,81 @@
+name: QA rebuild installable OFFLINE APK from pinned official TDLib
+on:
+  push:
+    branches: [qa/disposable-real-telegram-20261102]
+    paths: ['.github/workflows/qa-offline-apk.yml']
+permissions:
+  contents: read
+jobs:
+  offline-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Android static gates and QA regression checks
+        run: |
+          set -euo pipefail
+          python3 scripts/security_gate.py
+          python3 tests/RUN_QA_PRODUCTION_SAFETY_TESTS.py
+          python3 ci-contract/verify_ci_contract.py
+      - name: Build official TDLib JSON pinned to immutable source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=ea3f69ce11aef458bfbb09869b809ede4447486f
+          git clone --filter=blob:none --no-checkout https://github.com/tdlib/td.git official-tdlib-src
+          git -C official-tdlib-src checkout --detach "$SRC"
+          test "$(git -C official-tdlib-src rev-parse HEAD)" = "$SRC"
+          python3 scripts/prepare_tdlib_android.py official-tdlib-src/example/android/Dockerfile
+          mkdir -p native-output
+          (cd official-tdlib-src/example/android && DOCKER_BUILDKIT=1 docker build \
+            --build-arg "COMMIT_HASH=$SRC" \
+            --build-arg 'TDLIB_INTERFACE=JSON' \
+            --output "type=local,dest=$GITHUB_WORKSPACE/native-output" .)
+          ZIP=$(find native-output -type f -name 'tdlib.zip' -print -quit)
+          test -n "$ZIP" && test -s "$ZIP"
+          mkdir -p native-files
+          unzip -q "$ZIP" -d native-files
+          SO=$(find native-files -type f -path '*/arm64-v8a/libtdjson.so' -print -quit)
+          test -n "$SO" && test -s "$SO"
+          python3 scripts/verify_tdlib_elf.py "$SO"
+          install -D -m 0644 "$SO" app/src/main/jniLibs/arm64-v8a/libtdjson.so
+          python3 scripts/preflight.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install Android SDK/NDK build components
+        shell: bash
+        run: |
+          set -euo pipefail
+          MGR=$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -1)
+          test -x "$MGR"
+          yes | "$MGR" --licenses >/dev/null || true
+          "$MGR" --sdk_root="$ANDROID_HOME" --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;25.2.9519653' 'cmake;3.22.1'
+      - name: Compile OFFLINE APK only, without Telegram API keys
+        run: |
+          set -euo pipefail
+          gradle --no-daemon -PtelegramEnvironment=test :app:assembleSandboxDc
+          APK=app/build/outputs/apk/sandboxDc/app-sandboxDc.apk
+          test -s "$APK"
+          unzip -t "$APK" | tail -1
+          unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/libtdjson.so'
+          unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/libvaultbridge.so'
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
+          "$AAPT" dump badging "$APK" | grep -F "package: name='org.vault.exporter.sandbox.testnet'"
+          if "$AAPT" dump permissions "$APK" | grep -F 'android.permission.INTERNET'; then
+            echo 'ERROR: offline APK unexpectedly has network permission'; exit 47
+          fi
+          mkdir -p dist
+          cp "$APK" dist/VaultExporter_QA_OFFLINE_20261102.apk
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
+          printf '%s\n' 'OFFLINE QA APK ONLY - NOT A REAL TELEGRAM EXPORTER' \
+            'Can test local synthetic exports and JNI but cannot log into Telegram.' > dist/IMPORTANT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VaultExporter-OFFLINE-SOURCE-REBUILT-APK
+          path: dist/
+          retention-days: 7

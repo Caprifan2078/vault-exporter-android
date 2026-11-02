@@ -9,6 +9,12 @@ if (gradle.startParameter.taskNames.any { it.toLowerCase(java.util.Locale.ROOT).
         && telegramEnvironment != 'test')
     throw new GradleException('sandboxDc APK must always use telegramEnvironment=test')
 def productionApproved = providers.gradleProperty('approveProductionBuild').orElse('false').get() == 'true'
+// QA production is never the default and must be selected by an explicit build task.
+def isQaProductionBuild = gradle.startParameter.taskNames.any {
+    it.toLowerCase(java.util.Locale.ROOT).contains('qaproduction')
+}
+if (isQaProductionBuild && (telegramEnvironment != 'production' || !productionApproved))
+    throw new GradleException('qaProduction needs telegramEnvironment=production and approveProductionBuild=true')
 if (!(telegramEnvironment in ['test', 'production']))
     throw new GradleException('telegramEnvironment must be test or production')
 if (telegramEnvironment == 'production' && !productionApproved)
@@ -33,6 +39,7 @@ android {
         versionName '0.9-test-gated-alpha'
         buildConfigField 'boolean', 'TELEGRAM_TEST_DC', telegramEnvironment == 'test' ? 'true' : 'false'
         buildConfigField 'boolean', 'ALLOW_PRODUCTION', productionApproved ? 'true' : 'false'
+        buildConfigField 'boolean', 'QA_PRODUCTION', 'false'
         buildConfigField 'int', 'TELEGRAM_API_ID', telegramId
         buildConfigField 'String', 'TELEGRAM_API_HASH', '"' + telegramHash + '"'
         ndk { abiFilters 'arm64-v8a' }
@@ -46,6 +53,21 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug { minifyEnabled false }
+        // Manual, short-lived QA install for a disposable *real* Telegram account.
+        // Not a release: uses a separate package and Android debug signing key.
+        // Build only with approved developer API credentials and private CI artifact.
+        qaProduction {
+            initWith release
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            debuggable false
+            applicationIdSuffix '.qa'
+            versionNameSuffix '-qa-not-release'
+            matchingFallbacks = ['release']
+            buildConfigField 'boolean', 'TELEGRAM_TEST_DC', 'false'
+            buildConfigField 'boolean', 'ALLOW_PRODUCTION', 'true'
+            buildConfigField 'boolean', 'QA_PRODUCTION', 'true'
+        }
         // Developer-only network test build: a SEPARATE app, isolated from both
         // production Telegram and the strictly offline screenshot/debug demo.
         // Always targets Telegram TEST data centers, never production.
@@ -85,7 +107,8 @@ tasks.register('verifyExporterBuild') {
         if (offlineSandboxOnly) {
             if (telegramId != '0' || telegramHash != '')
                 throw new GradleException('Offline training APK must contain NO Telegram API credentials')
-        } else if (!(telegramId ==~ /[1-9][0-9]*/) || !(telegramHash ==~ /[a-fA-F0-9]{32}/)) {
+        } else if (!(telegramId ==~ /[1-9][0-9]*/) || !(telegramHash ==~ /[a-fA-F0-9]{32}/)
+                || telegramId == '1' || telegramHash == '00000000000000000000000000000000') {
             throw new GradleException('Missing developer Telegram API credentials (telegramApiId/telegramApiHash)')
         }
     }

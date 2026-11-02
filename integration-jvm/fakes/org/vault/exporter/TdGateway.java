@@ -34,6 +34,7 @@ public final class TdGateway {
     };
   }
   private static JSONObject file(int id){return new JSONObject().put("id",id);}
+  private File privateCacheFile(int id){return new File(root,"tdlib/files/file-"+id+".bin");}
   private JSONObject content(int position,long id){
     switch(position){
       case 3:return new JSONObject().put("@type","messageVoiceNote").put("voice_note",new JSONObject().put("voice",file(501)).put("mime_type","audio/ogg"));
@@ -75,16 +76,32 @@ public final class TdGateway {
     }
     if(type.equals("downloadFile")){
       int id=req.getInt("file_id");if(id==failFileId)throw new IOException("SIMULATED_MEDIA_DOWNLOAD_ERROR");
-      File f=new File(root,"tdlib/files/file-"+id+".bin");f.getParentFile().mkdirs();
+      File f=privateCacheFile(id);f.getParentFile().mkdirs();
       try(OutputStream out=new FileOutputStream(f)){
         if(largeVideo && id==503){
           byte[] chunk=new byte[65536];Arrays.fill(chunk,(byte)0x6a);
           for(int i=0;i<48*1024*1024/chunk.length;i++)out.write(chunk);
         }else out.write(contentFor(id));
       }
-      return new JSONObject().put("local",new JSONObject().put("is_downloading_completed",true).put("path",f.getCanonicalPath()));
+      return new JSONObject().put("id",id).put("size",f.length())
+        .put("local",new JSONObject().put("is_downloading_completed",true)
+        .put("is_downloading_active",false).put("path",f.getCanonicalPath()));
     }
-    if(type.equals("deleteFile"))return new JSONObject().put("@type","ok");
+    if(type.equals("cancelDownloadFile"))return new JSONObject().put("@type","ok");
+    if(type.equals("deleteFile")){
+      int id=req.getInt("file_id");
+      File cached=privateCacheFile(id);
+      if(cached.isFile()&&!cached.delete())throw new IOException("FAKE_CACHE_DELETE_FAILED");
+      return new JSONObject().put("@type","ok");
+    }
+    if(type.equals("getFile")){
+      int id=req.getInt("file_id");
+      File cached=privateCacheFile(id);
+      return new JSONObject().put("id",id).put("local",new JSONObject()
+        .put("is_downloading_active",false)
+        .put("is_downloading_completed",cached.isFile())
+        .put("path",cached.isFile()?cached.getCanonicalPath():""));
+    }
     throw new IOException("Unsupported fake call: "+type);
   }
 }

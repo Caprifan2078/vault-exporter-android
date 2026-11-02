@@ -134,6 +134,32 @@ public final class TestHardenedExportEngine {
     try{send(previewRoot,preview,chat,new ByteArrayOutputStream());}
     catch(IOException expected){previewRejected=expected.getMessage().contains("messageText");}
     yes(previewRejected,"Rich preview silently skipped");
+    // TDLib can encode link-preview variants as a nested type object; missing
+    // types must also fail closed instead of silently losing original media.
+    for(int mode=0;mode<2;mode++) {
+      File pRoot=Files.createTempDirectory("hardened-preview-format-").toFile();
+      TdGateway pFake=new TdGateway(shortIds,pRoot);
+      JSONObject pObj= mode==0
+        ? new JSONObject().put("type",new JSONObject().put("@type","linkPreviewTypePhoto"))
+        : new JSONObject();
+      pFake.contentOverride(1,new JSONObject().put("@type","messageText")
+        .put("text",new JSONObject().put("text","Preview test"))
+        .put("link_preview",pObj));
+      boolean rejected=false;
+      try{send(pRoot,pFake,chat,new ByteArrayOutputStream());}
+      catch(IOException error){rejected=error.getMessage().contains("messageText");}
+      yes(rejected,"Unrecognized or missing preview type was silently accepted");
+    }
+    // A known non-media article preview is permitted without an attachment.
+    File articleRoot=Files.createTempDirectory("hardened-article-preview-").toFile();
+    TdGateway articleFake=new TdGateway(shortIds,articleRoot);
+    articleFake.contentOverride(1,new JSONObject().put("@type","messageText")
+      .put("text",new JSONObject().put("text","Article test"))
+      .put("link_preview",new JSONObject().put("type",
+        new JSONObject().put("@type","linkPreviewTypeArticle"))));
+    ByteArrayOutputStream articleArchive=new ByteArrayOutputStream();
+    send(articleRoot,articleFake,chat,articleArchive);
+    checkArchive(articleArchive.toByteArray(),shortIds,8);
     File ordinaryRoot=Files.createTempDirectory("hardened-non-media-").toFile();
     TdGateway ordinary=new TdGateway(shortIds,ordinaryRoot);
     ordinary.contentOverride(1,new JSONObject().put("@type","messageContact")

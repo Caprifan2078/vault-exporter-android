@@ -28,6 +28,8 @@ public final class MainActivity extends Activity {
   private volatile boolean logoutRequested = false;
   private final java.util.concurrent.atomic.AtomicBoolean initializing = new java.util.concurrent.atomic.AtomicBoolean(false);
   private final java.util.concurrent.atomic.AtomicBoolean nativeProbeRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
+  // QA only: never ask for a phone number until native TDLib has passed a local self-check.
+  private volatile boolean nativeProbePassed = false;
   private final int CREATE_ARCHIVE = 718;
   private final int CREATE_OFFLINE_FIXTURE = 719;
   private final int CREATE_SYNTHETIC_EXPORT = 720;
@@ -52,6 +54,8 @@ public final class MainActivity extends Activity {
     scroll.addView(root); setContentView(scroll);
     title("Vault Exporter", 28, WHITE);
     title("ЭКСПОРТЁР • ЛОКАЛЬНО И БЕЗ ПОСРЕДНИКОВ", 11, MUTED);
+    if (BuildConfig.QA_PRODUCTION)
+      title("ТЕСТОВАЯ СБОРКА: только отдельный аккаунт и свои тестовые переписки. Не релиз.", 14, 0xffffcc66);
     title("Независимое приложение на базе Telegram API. Не является официальным приложением Telegram и не связано с его разработчиками.", 12, MUTED);
     title("Первый вход создаст отдельный сеанс Telegram. Применяются правила Telegram для сторонних клиентов; нулевой риск ограничений не гарантируется.", 12, MUTED);
     status = title("Не подключено к Telegram. Данные аккаунта не запрашиваются.", 15, WHITE);
@@ -80,6 +84,8 @@ public final class MainActivity extends Activity {
       button("Создать проверочный архив .tva (офлайн)", this::requestOfflineFixture);
     if (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)
       button("Проверить нативную TDLib (офлайн)", this::probeNativeTdlibOffline);
+    if (BuildConfig.QA_PRODUCTION)
+      button("Сначала проверить TDLib без аккаунта", this::probeNativeTdlibOffline);
     if (BuildConfig.TELEGRAM_TEST_DC) {
       message("В учебной версии вход в Telegram отключён. Интернет не требуется: нажми кнопку учебного чата.");
     } else if (!BuildConfig.DEBUG) {
@@ -501,7 +507,7 @@ public final class MainActivity extends Activity {
    * The emulator CI also disables all radios before using this control.
    */
   private void probeNativeTdlibOffline() {
-    if (!BuildConfig.DEBUG || !BuildConfig.TELEGRAM_TEST_DC || td != null || exporting) {
+    if (!(BuildConfig.QA_PRODUCTION || (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)) || td != null || exporting) {
       new AlertDialog.Builder(this).setTitle("Диагностика TDLib")
         .setMessage("Эта проверка доступна только в безопасном офлайн-режиме.")
         .setPositiveButton("Понятно", null).show();
@@ -516,6 +522,7 @@ public final class MainActivity extends Activity {
         .setPositiveButton("Понятно", null).show();
       return;
     }
+    nativeProbePassed = false;
     final AlertDialog dialog = new AlertDialog.Builder(this)
       .setTitle("Диагностика TDLib")
       .setMessage("Идёт офлайн-проверка движка (до 10 секунд).\nАккаунт Telegram не подключается.")
@@ -547,6 +554,7 @@ public final class MainActivity extends Activity {
             break;
           }
           if (!gotReply) throw new IOException("TDLib roundtrip timed out");
+          nativeProbePassed = true;
           result = "TDLIB_OFFLINE_PROBE_PASS: движок работает. Telegram не подключён.";
         } catch (Throwable ignored) {
           // Do not include native failure details or private payloads in the UI.
@@ -578,6 +586,10 @@ public final class MainActivity extends Activity {
       return;
     }
     if (BuildConfig.DEBUG) { showStatus("В демонстрационной сборке доступ к Telegram отключён."); return; }
+    if (BuildConfig.QA_PRODUCTION && !nativeProbePassed) {
+      showStatus("Сначала нажми «Проверить TDLib без аккаунта» и дождись PASS.");
+      return;
+    }
     if (td != null) { showStatus("Подключение уже началось."); return; }
     if (!BuildConfig.TELEGRAM_TEST_DC && !BuildConfig.ALLOW_PRODUCTION) {
       showStatus("Подключение к основному Telegram запрещено конфигурацией этой сборки.");
@@ -597,6 +609,10 @@ public final class MainActivity extends Activity {
   }
   private void beginConnect() {
     if (BuildConfig.DEBUG) { showStatus("В демонстрационной сборке подключение запрещено."); return; }
+    if (BuildConfig.QA_PRODUCTION && !nativeProbePassed) {
+      showStatus("Вход не запущен: сперва необходима успешная офлайн-проверка TDLib.");
+      return;
+    }
     clearUi(); message("Соединяемся с " + (BuildConfig.TELEGRAM_TEST_DC ? "тестовым Telegram" : "основным Telegram") + "…");
     showStatus("Инициализация TDLib по вашему запросу…");
     worker.execute(() -> {
