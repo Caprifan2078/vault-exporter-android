@@ -18,6 +18,8 @@ for fragment in (
     assert fragment in gradle, f'Missing build guard: {fragment}'
 assert 'if (BuildConfig.QA_PRODUCTION)' in activity
 assert 'ТЕСТОВАЯ СБОРКА' in activity
+assert 'Сначала проверить TDLib без аккаунта' in activity
+assert 'BuildConfig.QA_PRODUCTION || (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)' in activity
 assert 'if (!BuildConfig.TELEGRAM_TEST_DC && !BuildConfig.ALLOW_PRODUCTION)' in activity
 assert 'if (BuildConfig.DEBUG)' in activity
 assert 'if(BuildConfig.TELEGRAM_TEST_DC)' in activity
