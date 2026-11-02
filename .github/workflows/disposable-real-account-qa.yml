@@ -1,5 +1,5 @@
 name: Disposable-account REAL Telegram QA APK (private, not release)
-# Deliberately manual-only: never publish a real Telegram-connected APK on push.
+# Run only with explicit opt-in (manual approval or signed-off request file).
 on:
   workflow_dispatch:
     inputs:
@@ -8,17 +8,28 @@ on:
         required: true
         type: boolean
         default: false
+  push:
+    branches: [qa/disposable-real-telegram-20261102]
+    paths: ['ci/APPROVED_QA_BUILD_REQUEST.txt']
 permissions:
   contents: read
 jobs:
   qa:
-    if: ${{ inputs.approve_disposable_test_account == true }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.approve_disposable_test_account == true) || github.event_name == 'push' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
       TD_SOURCE_SHA: ea3f69ce11aef458bfbb09869b809ede4447486f
     steps:
       - uses: actions/checkout@v4
+      - name: Require explicit one-file approval on push
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = 'push' ]; then
+            test -f ci/APPROVED_QA_BUILD_REQUEST.txt
+            grep -Fx 'I_APPROVE_DISPOSABLE_ACCOUNT_QA_20261102' ci/APPROVED_QA_BUILD_REQUEST.txt
+          fi
       - name: Check developer API credentials without printing them
         shell: bash
         env:
