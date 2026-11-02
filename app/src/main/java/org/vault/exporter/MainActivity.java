@@ -82,6 +82,8 @@ public final class MainActivity extends Activity {
       button("Создать проверочный архив .tva (офлайн)", this::requestOfflineFixture);
     if (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)
       button("Проверить нативную TDLib (офлайн)", this::probeNativeTdlibOffline);
+    if (BuildConfig.QA_PRODUCTION)
+      button("Сначала проверить TDLib без аккаунта", this::probeNativeTdlibOffline);
     if (BuildConfig.TELEGRAM_TEST_DC) {
       message("В учебной версии вход в Telegram отключён. Интернет не требуется: нажми кнопку учебного чата.");
     } else if (!BuildConfig.DEBUG) {
@@ -503,7 +505,7 @@ public final class MainActivity extends Activity {
    * The emulator CI also disables all radios before using this control.
    */
   private void probeNativeTdlibOffline() {
-    if (!BuildConfig.DEBUG || !BuildConfig.TELEGRAM_TEST_DC || td != null || exporting) {
+    if (!(BuildConfig.QA_PRODUCTION || (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)) || td != null || exporting) {
       new AlertDialog.Builder(this).setTitle("Диагностика TDLib")
         .setMessage("Эта проверка доступна только в безопасном офлайн-режиме.")
         .setPositiveButton("Понятно", null).show();
