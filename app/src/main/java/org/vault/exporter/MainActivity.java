@@ -52,6 +52,8 @@ public final class MainActivity extends Activity {
     scroll.addView(root); setContentView(scroll);
     title("Vault Exporter", 28, WHITE);
     title("ЭКСПОРТЁР • ЛОКАЛЬНО И БЕЗ ПОСРЕДНИКОВ", 11, MUTED);
+    if (BuildConfig.QA_PRODUCTION)
+      title("ТЕСТОВАЯ СБОРКА: только отдельный аккаунт и свои тестовые переписки. Не релиз.", 14, 0xffffcc66);
     title("Независимое приложение на базе Telegram API. Не является официальным приложением Telegram и не связано с его разработчиками.", 12, MUTED);
     title("Первый вход создаст отдельный сеанс Telegram. Применяются правила Telegram для сторонних клиентов; нулевой риск ограничений не гарантируется.", 12, MUTED);
     status = title("Не подключено к Telegram. Данные аккаунта не запрашиваются.", 15, WHITE);
