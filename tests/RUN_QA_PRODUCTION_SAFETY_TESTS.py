@@ -30,7 +30,9 @@ assert 'authorizationStateWaitPassword' in activity
 assert 'authorizationStateWaitEmailCode' in activity
 assert 'android.permission.INTERNET' in manifest
 assert 'workflow_dispatch:' in workflow
-assert '  push:' not in workflow
+assert '  push:' in workflow
+assert 'ci/APPROVED_QA_BUILD_REQUEST.txt' in workflow
+assert 'I_APPROVE_DISPOSABLE_ACCOUNT_QA_20261102' in workflow
 assert 'approve_disposable_test_account == true' in workflow
 assert 'secrets.TELEGRAM_API_ID' in workflow
 assert 'secrets.TELEGRAM_API_HASH' in workflow
@@ -38,4 +40,4 @@ assert 'python3 scripts/prepare_tdlib_android.py' in workflow
 assert ':app:assembleQaProduction' in workflow
 assert "name='org.vault.exporter.qa'" in workflow
 assert 'retention-days: 1' in workflow
-print('PASS: manual-only disposable-account production QA gates (STATIC, no APK or live login).')
+print('PASS: explicit-trigger disposable-account production QA gates (STATIC, no APK or live login).')
