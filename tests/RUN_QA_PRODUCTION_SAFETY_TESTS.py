@@ -19,6 +19,9 @@ for fragment in (
 assert 'if (BuildConfig.QA_PRODUCTION)' in activity
 assert 'ТЕСТОВАЯ СБОРКА' in activity
 assert 'Сначала проверить TDLib без аккаунта' in activity
+assert 'private volatile boolean nativeProbePassed = false;' in activity
+assert 'nativeProbePassed = true;' in activity
+assert activity.count('BuildConfig.QA_PRODUCTION && !nativeProbePassed') == 2
 assert 'BuildConfig.QA_PRODUCTION || (BuildConfig.DEBUG && BuildConfig.TELEGRAM_TEST_DC)' in activity
 assert 'if (!BuildConfig.TELEGRAM_TEST_DC && !BuildConfig.ALLOW_PRODUCTION)' in activity
 assert 'if (BuildConfig.DEBUG)' in activity
