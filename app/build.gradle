@@ -11,10 +11,11 @@ if (gradle.startParameter.taskNames.any { it.toLowerCase(java.util.Locale.ROOT).
 def productionApproved = providers.gradleProperty('approveProductionBuild').orElse('false').get() == 'true'
 // QA production is never the default and must be selected by an explicit build task.
 def isQaProductionBuild = gradle.startParameter.taskNames.any {
-    it.toLowerCase(java.util.Locale.ROOT).contains('qaproduction')
+    it.toLowerCase(java.util.Locale.ROOT).contains('qaproduction') ||
+    it.toLowerCase(java.util.Locale.ROOT).contains('qaruntime')
 }
 if (isQaProductionBuild && (telegramEnvironment != 'production' || !productionApproved))
-    throw new GradleException('qaProduction needs telegramEnvironment=production and approveProductionBuild=true')
+    throw new GradleException('QA real Telegram builds need telegramEnvironment=production and approveProductionBuild=true')
 if (!(telegramEnvironment in ['test', 'production']))
     throw new GradleException('telegramEnvironment must be test or production')
 if (telegramEnvironment == 'production' && !productionApproved)
@@ -40,6 +41,7 @@ android {
         buildConfigField 'boolean', 'TELEGRAM_TEST_DC', telegramEnvironment == 'test' ? 'true' : 'false'
         buildConfigField 'boolean', 'ALLOW_PRODUCTION', productionApproved ? 'true' : 'false'
         buildConfigField 'boolean', 'QA_PRODUCTION', 'false'
+        buildConfigField 'boolean', 'QA_RUNTIME', 'false'
         buildConfigField 'int', 'TELEGRAM_API_ID', telegramId
         buildConfigField 'String', 'TELEGRAM_API_HASH', '"' + telegramHash + '"'
         ndk { abiFilters 'arm64-v8a' }
@@ -67,6 +69,23 @@ android {
             buildConfigField 'boolean', 'TELEGRAM_TEST_DC', 'false'
             buildConfigField 'boolean', 'ALLOW_PRODUCTION', 'true'
             buildConfigField 'boolean', 'QA_PRODUCTION', 'true'
+        }
+        // QA-only test of real Telegram where credentials are entered locally, not embedded.
+        // This is NOT a safe public release. Never distribute outside isolated testing.
+        qaRuntime {
+            initWith release
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            debuggable false
+            applicationIdSuffix '.runtimeqa'
+            versionNameSuffix '-runtime-qa-only'
+            matchingFallbacks = ['release']
+            buildConfigField 'boolean', 'TELEGRAM_TEST_DC', 'false'
+            buildConfigField 'boolean', 'ALLOW_PRODUCTION', 'true'
+            buildConfigField 'boolean', 'QA_PRODUCTION', 'true'
+            buildConfigField 'boolean', 'QA_RUNTIME', 'true'
+            buildConfigField 'int', 'TELEGRAM_API_ID', '0'
+            buildConfigField 'String', 'TELEGRAM_API_HASH', '""'
         }
         // Developer-only network test build: a SEPARATE app, isolated from both
         // production Telegram and the strictly offline screenshot/debug demo.
@@ -104,7 +123,17 @@ tasks.register('verifyExporterBuild') {
             file('src/sandboxDc/AndroidManifest.xml').text.contains('tools:node="remove"') &&
             file('src/main/java/org/vault/exporter/MainActivity.java').text.contains(
                 'if(BuildConfig.TELEGRAM_TEST_DC){')
-        if (offlineSandboxOnly) {
+        // The isolated runtime-credential QA APK contains no developer keys.
+        // Its login path is gated behind native self-check and local API fields.
+        def runtimeQaOnly = telegramEnvironment == 'production' &&
+            productionApproved && tasksRequested.size() == 1 &&
+            tasksRequested[0].toLowerCase(java.util.Locale.ROOT).endsWith('assembleqaruntime') &&
+            file('src/main/java/org/vault/exporter/MainActivity.java').text.contains(
+                'private void showQaApiSetup()')
+        if (runtimeQaOnly) {
+            if (telegramId != '0' || telegramHash != '')
+                throw new GradleException('Runtime QA APK must NEVER embed developer API credentials')
+        } else if (offlineSandboxOnly) {
             if (telegramId != '0' || telegramHash != '')
                 throw new GradleException('Offline training APK must contain NO Telegram API credentials')
         } else if (!(telegramId ==~ /[1-9][0-9]*/) || !(telegramHash ==~ /[a-fA-F0-9]{32}/)
