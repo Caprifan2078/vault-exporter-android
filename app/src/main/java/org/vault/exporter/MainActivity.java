@@ -30,6 +30,10 @@ public final class MainActivity extends Activity {
   private final java.util.concurrent.atomic.AtomicBoolean nativeProbeRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
   // QA only: never ask for a phone number until native TDLib has passed a local self-check.
   private volatile boolean nativeProbePassed = false;
+  // Runtime-only QA: developer API credentials stay in this Activity memory only.
+  // No password, phone number, or API hash is saved to preferences or GitHub.
+  private volatile int qaApiId = 0;
+  private volatile String qaApiHash = "";
   private final int CREATE_ARCHIVE = 718;
   private final int CREATE_OFFLINE_FIXTURE = 719;
   private final int CREATE_SYNTHETIC_EXPORT = 720;
@@ -56,6 +60,8 @@ public final class MainActivity extends Activity {
     title("ЭКСПОРТЁР • ЛОКАЛЬНО И БЕЗ ПОСРЕДНИКОВ", 11, MUTED);
     if (BuildConfig.QA_PRODUCTION)
       title("ТЕСТОВАЯ СБОРКА: только отдельный аккаунт и свои тестовые переписки. Не релиз.", 14, 0xffffcc66);
+    if (BuildConfig.QA_RUNTIME)
+      title("API-ключи приложения вводятся на телефоне после проверки движка. Они НЕ отправляются в GitHub.", 13, MUTED);
     title("Независимое приложение на базе Telegram API. Не является официальным приложением Telegram и не связано с его разработчиками.", 12, MUTED);
     title("Первый вход создаст отдельный сеанс Telegram. Применяются правила Telegram для сторонних клиентов; нулевой риск ограничений не гарантируется.", 12, MUTED);
     status = title("Не подключено к Telegram. Данные аккаунта не запрашиваются.", 15, WHITE);
@@ -595,7 +601,11 @@ public final class MainActivity extends Activity {
       showStatus("Подключение к основному Telegram запрещено конфигурацией этой сборки.");
       return;
     }
-    if (BuildConfig.TELEGRAM_API_ID <= 0 || BuildConfig.TELEGRAM_API_HASH.isEmpty()) {
+    if (BuildConfig.QA_RUNTIME && (qaApiId <= 1 || qaApiHash.length() != 32)) {
+      showQaApiSetup();
+      return;
+    }
+    if (!BuildConfig.QA_RUNTIME && (BuildConfig.TELEGRAM_API_ID <= 0 || BuildConfig.TELEGRAM_API_HASH.isEmpty())) {
       showStatus("Для сетевого теста разработчик должен настроить Telegram API. Офлайн-демонстрация доступна без ключей.");
       return;
     }
@@ -607,8 +617,51 @@ public final class MainActivity extends Activity {
       .setPositiveButton(BuildConfig.TELEGRAM_TEST_DC ? "Только тестовый сервер" : "Понимаю риск, подключить",
         (d, which) -> beginConnect()).show();
   }
+  // API credentials come from an isolated developer registration, not from ChatGPT.
+  // Never permit a real Telegram connection before explicit local confirmation.
+  private void showQaApiSetup() {
+    if (!BuildConfig.QA_RUNTIME || !nativeProbePassed || td != null) return;
+    LinearLayout fields = new LinearLayout(this);
+    fields.setOrientation(LinearLayout.VERTICAL);
+    fields.setPadding(dp(16),dp(6),dp(16),dp(4));
+    EditText id = new EditText(this);
+    id.setHint("API ID (число)");
+    id.setSingleLine(true);
+    id.setInputType(InputType.TYPE_CLASS_NUMBER);
+    fields.addView(id);
+    EditText hash = new EditText(this);
+    hash.setHint("API Hash (32 символа)");
+    hash.setSingleLine(true);
+    hash.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+    fields.addView(hash);
+    new AlertDialog.Builder(this).setTitle("API-ключи тестового приложения")
+      .setMessage("Введите api_id и api_hash от отдельного Telegram API-приложения. Они не сохраняются на диск. НЕ вводите сюда SMS-код, пароль аккаунта или данные своего основного аккаунта.")
+      .setView(fields).setNegativeButton("Отмена",null)
+      .setPositiveButton("Продолжить",(dialog,which)->{
+        String idString=id.getText().toString().trim();
+        String hashString=hash.getText().toString().trim();
+        int parsed=0;
+        try { parsed=Integer.parseInt(idString); }
+        catch(NumberFormatException ignored) { /* Invalid credentials: no connection. */ }
+        if (parsed <= 1 || !hashString.matches("[0-9a-fA-F]{32}") ||
+            hashString.equals("00000000000000000000000000000000")) {
+          showStatus("Неверный формат API ID или Hash. Подключение НЕ выполнялось.");
+          hash.setText("");
+          return;
+        }
+        qaApiId=parsed;
+        qaApiHash=hashString;
+        hash.setText("");
+        id.setText("");
+        askBeforeConnect();
+      }).show();
+  }
   private void beginConnect() {
     if (BuildConfig.DEBUG) { showStatus("В демонстрационной сборке подключение запрещено."); return; }
+    if (BuildConfig.QA_RUNTIME && (qaApiId <= 1 || qaApiHash.length() != 32)) {
+      showStatus("Нельзя подключиться без собственных API-ключей тестового приложения.");
+      return;
+    }
     if (BuildConfig.QA_PRODUCTION && !nativeProbePassed) {
       showStatus("Вход не запущен: сперва необходима успешная офлайн-проверка TDLib.");
       return;
@@ -667,7 +720,8 @@ public final class MainActivity extends Activity {
             .put("database_encryption_key",Base64.encodeToString(secret,Base64.NO_WRAP))
             .put("use_file_database",true).put("use_chat_info_database",true)
             .put("use_message_database",true).put("use_secret_chats",false)
-            .put("api_id",BuildConfig.TELEGRAM_API_ID).put("api_hash",BuildConfig.TELEGRAM_API_HASH)
+            .put("api_id",BuildConfig.QA_RUNTIME ? qaApiId : BuildConfig.TELEGRAM_API_ID)
+             .put("api_hash",BuildConfig.QA_RUNTIME ? qaApiHash : BuildConfig.TELEGRAM_API_HASH)
             .put("system_language_code",Locale.getDefault().getLanguage())
             .put("device_model",android.os.Build.MODEL).put("system_version",android.os.Build.VERSION.RELEASE)
             .put("application_version","0.9-test-gated-alpha");
@@ -1024,6 +1078,8 @@ public final class MainActivity extends Activity {
     // Abandoning the picker must not retain the vault password in the Activity.
     if(pendingPassphrase!=null){Arrays.fill(pendingPassphrase,'\0');pendingPassphrase=null;}
     pendingChatId=0;
+    qaApiId=0;
+    qaApiHash="";
     if(td!=null) td.stop();
     worker.shutdownNow();
     super.onDestroy();
