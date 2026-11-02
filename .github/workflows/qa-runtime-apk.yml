@@ -1,4 +1,4 @@
-name: QA APK: runtime API credentials, official TDLib, NO account login in CI
+name: 'QA APK: runtime API credentials, official TDLib, NO account login in CI'
 on:
   push:
     branches: [qa/runtime-api-test-account-20261102]
