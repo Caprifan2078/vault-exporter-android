@@ -538,8 +538,11 @@ public final class MainActivity extends Activity {
     try {
       worker.execute(() -> {
         long clientId = 0;
+        boolean receiverOwned = false;
         String result = "TDLIB_OFFLINE_PROBE_FAIL: нет корректного ответа TDLib.";
         try {
+          if (!TdNative.acquireReceiver()) throw new IllegalStateException("TDLib занят");
+          receiverOwned = true;
           clientId = TdNative.createClient();
           if (clientId <= 0) throw new IllegalStateException("TDLib client creation returned zero");
           // getAuthorizationState is local before TDLib parameters; no account or network.
@@ -569,6 +572,7 @@ public final class MainActivity extends Activity {
             try { TdNative.send(clientId, "{\"@type\":\"close\"}"); }
             catch (Throwable ignored) { /* diagnostic cleanup only */ }
           }
+          if (receiverOwned) TdNative.releaseReceiver();
           nativeProbeRunning.set(false);
           final String message = result;
           showStatus(message);

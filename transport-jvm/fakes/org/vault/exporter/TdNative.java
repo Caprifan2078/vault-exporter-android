@@ -8,6 +8,9 @@ public final class TdNative {
   static final BlockingQueue<String> outbound=new LinkedBlockingQueue<>();
   static final AtomicInteger nextClient=new AtomicInteger(91);
   static final AtomicBoolean gateNextHistory=new AtomicBoolean();
+  static final AtomicBoolean receiverOwned=new AtomicBoolean();
+  static boolean acquireReceiver(){return receiverOwned.compareAndSet(false,true);}
+  static void releaseReceiver(){receiverOwned.set(false);}
   static volatile CountDownLatch historyEntered=new CountDownLatch(0);
   static volatile CountDownLatch historyRelease=new CountDownLatch(0);
   static void holdNextHistorySend(){

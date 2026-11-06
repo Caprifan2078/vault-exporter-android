@@ -24,26 +24,37 @@ public final class TdGateway {
 
   public TdGateway(Listener callback) {
     this.listener = callback;
-    client = TdNative.createClient();
-    if (client == 0) throw new IllegalStateException("TDLib не включена в APK: нет официальной libtdjson.so");
-    reader = new Thread(() -> {
-      while (running) {
-        String response = TdNative.receive(0.5);
-        if (response == null) continue;
+    // The TDLib C API has one global receive queue; multiple reader threads
+    // race and can consume another client's responses. Fail closed instead.
+    if (!TdNative.acquireReceiver())
+      throw new IllegalStateException("TDLib уже используется другой операцией");
+    try {
+      client = TdNative.createClient();
+      if (client <= 0) throw new IllegalStateException("TDLib не включена в APK: нет официальной libtdjson.so");
+      reader = new Thread(() -> {
         try {
-          JSONObject obj = new JSONObject(response);
-          if (obj.optLong("@client_id", client) != client) continue;
-          String extra = obj.optString("@extra", "");
-          if (!extra.isEmpty()) {
-            CompletableFuture<JSONObject> promise = pending.remove(extra);
-            if (promise != null) { promise.complete(obj); continue; }
+          while (running) {
+            String response = TdNative.receive(0.5);
+            if (response == null) continue;
+            try {
+              JSONObject obj = new JSONObject(response);
+              if (obj.optLong("@client_id", 0) != client) continue;
+              String extra = obj.optString("@extra", "");
+              if (!extra.isEmpty()) {
+                CompletableFuture<JSONObject> promise = pending.remove(extra);
+                if (promise != null) { promise.complete(obj); continue; }
+              }
+              if (obj.optString("@type").startsWith("update")) listener.onUpdate(obj);
+            } catch (Exception ignored) { /* Don't log private Telegram content. */ }
           }
-          if (obj.optString("@type").startsWith("update")) listener.onUpdate(obj);
-        } catch (Exception ignored) { /* Don't log private Telegram content. */ }
-      }
-    }, "tdlib-event-pump");
-    reader.setDaemon(true);
-    reader.start();
+        } finally { TdNative.releaseReceiver(); }
+      }, "tdlib-event-pump");
+      reader.setDaemon(true);
+      reader.start();
+    } catch (RuntimeException | Error failure) {
+      TdNative.releaseReceiver();
+      throw failure;
+    }
   }
   public CompletableFuture<JSONObject> call(JSONObject request) {
     synchronized(sendLock) {
