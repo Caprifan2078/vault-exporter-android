@@ -122,11 +122,10 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-boot-timeout: 600
-          script: |
-            set -euo pipefail
-            adb shell svc wifi disable
-            adb shell svc data disable
-            adb install qa-apk/VaultExporter_REAL_TG_RUNTIME_QA_20261102.apk
-            adb shell am start -W -n org.vault.exporter.runtimeqa/org.vault.exporter.MainActivity
-            adb shell pidof org.vault.exporter.runtimeqa
+          script: >-
+            adb shell svc wifi disable &&
+            adb shell svc data disable &&
+            adb install qa-apk/VaultExporter_REAL_TG_RUNTIME_QA_20261102.apk &&
+            adb shell am start -W -n org.vault.exporter.runtimeqa/org.vault.exporter.MainActivity &&
+            adb shell pidof org.vault.exporter.runtimeqa &&
             adb shell dumpsys activity activities | grep -F 'org.vault.exporter.runtimeqa'
