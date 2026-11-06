@@ -1,7 +1,7 @@
 name: QA Android Java compile and regression checks (NO Telegram login)
 on:
   push:
-    branches: [qa/disposable-real-telegram-20261102]
+    branches: [qa/disposable-real-telegram-20261102, qa/security-recovery-20261106]
     paths:
       - '.github/workflows/qa-android-compile.yml'
       - 'app/**'
