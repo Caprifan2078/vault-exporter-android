@@ -103,15 +103,20 @@ public final class TestHardenedExportEngine {
       try{send(badChatRoot,badChat,chat,out);}catch(SecurityException expected){refused=true;}
       yes(refused && out.size()==0,"Unknown or secret chat accepted: "+badType);
     }
-    for(int mode=1;mode<=2;mode++) {
+    for(int mode=1;mode<=3;mode++) {
       File limitRoot=Files.createTempDirectory("participant-stop-").toFile();
       TdGateway gateway=new TdGateway(ids(3),limitRoot);gateway.failParticipant(mode);
       boolean stopped=false;
       try{send(limitRoot,gateway,chat,new ByteArrayOutputStream());}
       catch(IOException expected){stopped=mode==1 && expected.getCause() instanceof TelegramRateLimit.Delay;}
       catch(InterruptedException expected){stopped=mode==2 && Thread.currentThread().isInterrupted();Thread.interrupted();}
+      catch(TdGateway.TelegramError expected){stopped=mode==3 && expected.code==429;}
       yes(stopped,"Participant lookup swallowed rate limit or cancellation: "+mode);
     }
+    File missingUserRoot=Files.createTempDirectory("missing-user-").toFile();
+    TdGateway missingUser=new TdGateway(ids(3),missingUserRoot);missingUser.failParticipant(4);
+    ByteArrayOutputStream anonymous=new ByteArrayOutputStream();send(missingUserRoot,missingUser,chat,anonymous);
+    checkArchive(anonymous.toByteArray(),ids(3),0);
     TdGateway fails=new TdGateway(shortIds,root);fails.failOnHistoryCall(9);boolean failed=false;
     try{send(root,fails,chat,new ByteArrayOutputStream());}
     catch(IOException ex){failed=ex.getMessage().contains("SIMULATED_NETWORK_DROP");}

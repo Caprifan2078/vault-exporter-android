@@ -5,6 +5,10 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 /** Fake transport, no Telegram connection. Mimics short pages with cursor overlap. */
 public final class TdGateway {
+  public static final class TelegramError extends IllegalStateException {
+    public final int code;
+    public TelegramError(int code){super("Synthetic Telegram error "+code);this.code=code;}
+  }
   final long[] ids;final File root;
   int calls,failHistoryAt,failFileId,failChatAt;
   boolean inconsistentEmpty,protectedChat,secretChat,largeVideo;
@@ -70,6 +74,8 @@ public final class TdGateway {
     if(type.equals("getUser")){
       if(participantFailure==1)throw new TelegramRateLimit.Delay(121);
       if(participantFailure==2)throw new InterruptedException("synthetic cancellation");
+      if(participantFailure==3)throw new TelegramError(429);
+      if(participantFailure==4)throw new TelegramError(404);
       return new JSONObject().put("first_name","Test");
     }
     if(type.equals("getChatHistory")){

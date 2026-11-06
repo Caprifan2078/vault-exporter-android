@@ -638,6 +638,7 @@ public final class ExportEngine {
               .put("username",user.optString("username")));
           } catch(InterruptedException e) {Thread.currentThread().interrupt();throw e;}
             catch(IOException e) {if(e.getCause() instanceof TelegramRateLimit.Delay)throw e;participants.put(new JSONObject().put("kind","user").put("id",userId));}
+            catch(TdGateway.TelegramError e) {if(e.code!=404)throw e;participants.put(new JSONObject().put("kind","user").put("id",userId));}
             catch(Exception e) {participants.put(new JSONObject().put("kind","user").put("id",userId));}
         }
         for(long senderChat:senderChats) {
@@ -647,6 +648,7 @@ public final class ExportEngine {
               .put("title",identity.optString("title")));
           } catch(InterruptedException e) {Thread.currentThread().interrupt();throw e;}
             catch(IOException e) {if(e.getCause() instanceof TelegramRateLimit.Delay)throw e;participants.put(new JSONObject().put("kind","chat").put("id",senderChat));}
+            catch(TdGateway.TelegramError e) {if(e.code!=404)throw e;participants.put(new JSONObject().put("kind","chat").put("id",senderChat));}
             catch(Exception e) {participants.put(new JSONObject().put("kind","chat").put("id",senderChat));}
         }
         archive.writeBytes("participants.json",participants.toString().getBytes(StandardCharsets.UTF_8));
