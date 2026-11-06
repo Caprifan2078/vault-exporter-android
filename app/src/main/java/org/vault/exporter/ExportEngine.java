@@ -247,7 +247,7 @@ public final class ExportEngine {
     }
   }
 
-  private File cloudDownload(int id) throws Exception {
+  private File cloudDownload(int id,String expectedRemoteId) throws Exception {
     Exception last=null;
     for(int attempt=1;attempt<=FILE_RETRIES;attempt++) {
       File observedSource=null;
@@ -259,6 +259,13 @@ public final class ExportEngine {
           observedSource=new File(local.optString("path")).getCanonicalFile();
         if(!result.has("id") || result.optInt("id",-1)!=id)
           throw new SecurityException("TDLib вернула неверный file_id для вложения "+id);
+        // A local file id may be reused while a download is in flight. The
+        // downloaded File must still identify the same persistent remote file.
+        if(expectedRemoteId!=null && !expectedRemoteId.isEmpty()) {
+          JSONObject remote=result.optJSONObject("remote");
+          if(remote==null || !expectedRemoteId.equals(remote.optString("unique_id","")))
+            throw new SecurityException("Идентификатор загруженного медиа изменился: "+id);
+        }
         if(local==null || !local.optBoolean("is_downloading_completed",false))
           throw new IOException("TDLib не завершила загрузку файла "+id);
         if(observedSource==null || !observedSource.isFile() ||
@@ -621,7 +628,7 @@ public final class ExportEngine {
               // an orphan from an incomplete page without a matching identity.
               stage.dropMedia(msgId,fileId);
               checkCapacityBeforeDownload(attachment.file);
-            File source=cloudDownload(fileId);
+            File source=cloudDownload(fileId,uniqueId);
               Exception saveFailure=null;
               try{saved=stage.saveMedia(msgId,fileId,source);}
               catch(Exception e){saveFailure=e;throw e;}

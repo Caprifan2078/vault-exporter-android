@@ -12,6 +12,8 @@ public final class TdGateway {
   final long[] ids;final File root;
   int calls,failHistoryAt,failFileId,failChatAt;
   boolean changedVoice,missingVoiceIdentity;
+  int downloadIdentityFault;
+  public void setDownloadIdentityFault(int mode){downloadIdentityFault=mode;}
   public void changeVoice(){changedVoice=true;}
   public void omitVoiceIdentity(){missingVoiceIdentity=true;}
   int chatCalls,protectOnChatCall;
@@ -149,9 +151,15 @@ public final class TdGateway {
         }else if(changedVoice && id==501)out.write("OggS changed voice data".getBytes(StandardCharsets.UTF_8));
         else out.write(contentFor(id));
       }
-      return new JSONObject().put("id",id).put("size",f.length())
+      JSONObject result=new JSONObject().put("id",id).put("size",f.length())
         .put("local",new JSONObject().put("is_downloading_completed",true)
         .put("is_downloading_active",false).put("path",f.getCanonicalPath()));
+      if(id!=501 || downloadIdentityFault!=2) {
+        JSONObject remote=file(id).optJSONObject("remote");
+        if(id==501 && downloadIdentityFault==1)remote.put("unique_id","different-file");
+        result.put("remote",remote);
+      }
+      return result;
     }
     if(type.equals("cancelDownloadFile"))return new JSONObject().put("@type","ok");
     if(type.equals("deleteFile")){

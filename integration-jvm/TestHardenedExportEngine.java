@@ -184,6 +184,19 @@ public final class TestHardenedExportEngine {
       yes(Arrays.equals(voice,expected),"orphan media reused without matching persistent identity, scenario="+scenario);
     }
     System.out.println("PASS interrupted media: changed, unchanged and missing persistent identities");
+    for(int fault:new int[]{1,2}) {
+      File mismatchRoot=Files.createTempDirectory("download-identity-fault-").toFile();
+      TdGateway mismatch=new TdGateway(ids(4),mismatchRoot);mismatch.setDownloadIdentityFault(fault);
+      ByteArrayOutputStream output=new ByteArrayOutputStream();boolean refused=false;
+      try{send(mismatchRoot,mismatch,chat,output);}
+      catch(SecurityException expected){refused=true;}
+      yes(refused && output.size()==0,"download with changed or missing identity accepted");
+      yes(!new File(mismatchRoot,"tdlib/files/file-501.bin").exists(),"failed download left plaintext behind");
+      ByteArrayOutputStream resumed=new ByteArrayOutputStream();
+      send(mismatchRoot,new TdGateway(ids(4),mismatchRoot),chat,resumed);
+      checkArchive(resumed.toByteArray(),ids(4),1);
+    }
+    System.out.println("PASS changed or missing downloaded media identity rejected, plaintext cleaned, retry succeeds");
     // Crash in final archive output must not invalidate committed encrypted staging.
     File finalRoot=Files.createTempDirectory("hardened-engine-finalize-").toFile();
     final long[] created={0};boolean failedFinalize=false;
