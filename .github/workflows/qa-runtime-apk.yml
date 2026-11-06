@@ -120,7 +120,7 @@ jobs:
           path: synthetic-dist/
           retention-days: 1
 
-  # Wait for the diagnostic control and require each fresh success dialog.
+  # Handle system launcher ANR and require each fresh diagnostic success dialog.
   offline-emulator-smoke:
     needs: runtime-apk
     runs-on: ubuntu-24.04

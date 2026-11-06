@@ -15,10 +15,28 @@ def screen():
         raise RuntimeError("UI hierarchy unavailable")
     return ET.fromstring(text[start:end + len("</hierarchy>")])
 
+def dismiss_launcher_anr(root):
+    nodes = list(root.iter("node"))
+    if not any("Pixel Launcher" in n.get("text","") and "respond" in n.get("text","").lower() for n in nodes):
+        return False
+    close = next((n for n in nodes if n.get("resource-id") == "android:id/aerr_close"), None)
+    if close is None:
+        raise RuntimeError("Pixel Launcher ANR cannot be dismissed")
+    coords = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", close.get("bounds", ""))
+    if not coords:
+        raise RuntimeError("Pixel Launcher ANR has invalid bounds")
+    x1, y1, x2, y2 = map(int, coords.groups())
+    print("Dismissing Pixel Launcher ANR, not the app under test")
+    adb("shell", "input", "tap", str((x1+x2)//2), str((y1+y2)//2))
+    time.sleep(1)
+    return True
+
 def probe():
     node = None
     for attempt in range(12):
         root = screen()
+        if dismiss_launcher_anr(root):
+            continue
         node = next((n for n in root.iter("node") if "Сначала проверить TDLib без аккаунта" in n.get("text", "")), None)
         if node is not None:
             break
@@ -35,7 +53,10 @@ def probe():
     deadline = time.monotonic() + 40
     while time.monotonic() < deadline:
         time.sleep(1)
-        texts = [n.get("text", "") for n in screen().iter("node")]
+        root = screen()
+        if dismiss_launcher_anr(root):
+            continue
+        texts = [n.get("text", "") for n in root.iter("node")]
         # The background status can still contain PASS from the first run.
         # Require the current diagnostic dialog's success text instead.
         if any("Готово! Движок TDLib отвечает." in value and "TDLIB_OFFLINE_PROBE_PASS" in value for value in texts):
