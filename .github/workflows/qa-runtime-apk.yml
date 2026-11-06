@@ -6,6 +6,7 @@ on:
       - '.github/workflows/qa-runtime-apk.yml'
       - 'app/**'
       - 'tests/RUN_RUNTIME_QA_BUILD_GATES.py'
+      - 'ci/synthetic-offline-apk-smoke.sh'
 permissions:
   contents: read
   actions: read

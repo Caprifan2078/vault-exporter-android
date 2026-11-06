@@ -49,10 +49,32 @@ for node in root.iter('node'):
 sys.exit(1)
 PY
 }
+dismiss_launcher_anr() {
+  local xy
+  xy="$(python3 - /tmp/vault-mock/window.xml <<'PY'
+import sys,re,xml.etree.ElementTree as E
+root=E.parse(sys.argv[1]).getroot()
+nodes=list(root.iter("node"))
+if not any("Pixel Launcher" in n.get("text","") and "respond" in n.get("text","").lower() for n in nodes):
+    sys.exit(1)
+for node in nodes:
+    if node.get("resource-id")!="android:id/aerr_close":continue
+    m=re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',node.get("bounds",""))
+    if m:
+        a,b,c,d=map(int,m.groups());print((a+c)//2,(b+d)//2);sys.exit(0)
+sys.exit(1)
+PY
+)" || return 1
+  read -r x y <<<"$xy"
+  echo "Dismissing Pixel Launcher ANR, not the app under test"
+  adb shell input tap "$x" "$y"
+  sleep 2
+}
 tap_found() {
   local label="$1" xy
-  for attempt in 1 2 3 4 5; do
+  for attempt in 1 2 3 4 5 6 7 8; do
     capture || true
+    if dismiss_launcher_anr; then continue; fi
     if xy="$(find_button "$label")"; then
       read -r x y <<<"$xy"
       adb shell input tap "$x" "$y"
