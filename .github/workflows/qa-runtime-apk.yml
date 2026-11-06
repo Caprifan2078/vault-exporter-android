@@ -99,6 +99,26 @@ jobs:
           path: dist/
           retention-days: 1
 
+      - name: Build isolated synthetic-export APK without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon -PtelegramEnvironment=test :app:assembleSandboxDc
+          APK=app/build/outputs/apk/sandboxDc/app-sandboxDc.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
+          "$AAPT" dump badging "$APK" | grep -F "package: name='org.vault.exporter.sandbox.testnet'"
+          ! "$AAPT" dump permissions "$APK" | grep -F 'android.permission.INTERNET'
+          mkdir -p synthetic-dist
+          cp "$APK" synthetic-dist/VaultExporter-OFFLINE-TRAINING.apk
+          (cd synthetic-dist && sha256sum *.apk > SHA256SUMS.txt)
+      - name: Upload isolated synthetic-export APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VAULT-OFFLINE-SYNTHETIC-EXPORT
+          path: synthetic-dist/
+          retention-days: 1
+
   # Wait for the diagnostic control and require each fresh success dialog.
   offline-emulator-smoke:
     needs: runtime-apk
@@ -132,3 +152,34 @@ jobs:
             adb shell pidof org.vault.exporter.runtimeqa &&
             adb shell dumpsys activity activities | grep -F 'org.vault.exporter.runtimeqa' &&
             python3 ci/qa-runtime-native-probe.py
+
+  offline-synthetic-export:
+    needs: runtime-apk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: VAULT-OFFLINE-SYNTHETIC-EXPORT
+          path: ci-apk
+      - name: Validate offline fixture APK
+        run: |
+          cd ci-apk
+          sha256sum -c SHA256SUMS.txt
+          echo "APK_UNDER_TEST=$GITHUB_WORKSPACE/ci-apk/VaultExporter-OFFLINE-TRAINING.apk" >> "$GITHUB_ENV"
+      - name: Enable KVM when available
+        run: |
+          if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; else echo 'KVM unavailable'; fi
+      - name: Export fictional chat without network
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 2048M
+          heap-size: 256M
+          disable-animations: true
+          emulator-boot-timeout: 900
+          script: bash ci/synthetic-offline-apk-smoke.sh
