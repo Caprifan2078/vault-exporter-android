@@ -99,6 +99,7 @@ jobs:
           path: dist/
           retention-days: 1
 
+  # Repeat the native probe to check receiver cleanup between runs.
   offline-emulator-smoke:
     needs: runtime-apk
     runs-on: ubuntu-24.04
