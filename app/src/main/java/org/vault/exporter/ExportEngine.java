@@ -471,8 +471,11 @@ public final class ExportEngine {
     String kind=before.optString("@type","");
     if(kind.isEmpty() || !kind.equals(after.optString("@type","")))
       throw new CachedMessageStateException("Тип сохранённого сообщения изменился");
-    if("messageText".equals(kind))
+    if("messageText".equals(kind)) {
+      if(before.optJSONObject("text")==null || after.optJSONObject("text")==null)
+        throw new CachedMessageStateException("Нет текста сохранённого сообщения");
       compareFormatted(before.optJSONObject("text"),after.optJSONObject("text"));
+    }
     compareFormatted(before.optJSONObject("caption"),after.optJSONObject("caption"));
     List<Attachment> oldFiles=attachments(snapshot),newFiles=attachments(current);
     if(oldFiles.size()!=newFiles.size())
