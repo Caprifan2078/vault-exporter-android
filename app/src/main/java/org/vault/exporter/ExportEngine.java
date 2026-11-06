@@ -323,6 +323,11 @@ public final class ExportEngine {
     String kind=c==null?"":c.optString("@type","");
     if(msg.has("can_be_saved")&&!msg.optBoolean("can_be_saved",true))
       throw new SecurityException("Сохранение сообщения запрещено Telegram: "+mid);
+    // Destruction and auto-delete metadata belongs to the message, not only
+    // to its content. Do not preserve messages that Telegram will remove.
+    if(msg.optJSONObject("self_destruct_type")!=null ||
+        msg.optDouble("self_destruct_in",0)>0 || msg.optDouble("auto_delete_in",0)>0)
+      throw new SecurityException("Нельзя экспортировать самоудаляющееся сообщение: "+mid);
     if(c!=null&&c.optBoolean("is_secret",false))
       throw new SecurityException("Нельзя экспортировать самоисчезающее медиа: "+mid);
     ArrayList<Attachment> result=new ArrayList<>();

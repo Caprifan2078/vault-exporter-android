@@ -17,6 +17,7 @@ public class JSONObject {
   public int optInt(String key,int fallback){Object v=map.get(key);return v instanceof Number?((Number)v).intValue():fallback;}
   public long optLong(String key){return optLong(key,0);}
   public long optLong(String key,long fallback){Object v=map.get(key);return v instanceof Number?((Number)v).longValue():fallback;}
+  public double optDouble(String key,double fallback){Object v=map.get(key);return v instanceof Number?((Number)v).doubleValue():fallback;}
   public long getLong(String key){if(!map.containsKey(key)||!(map.get(key) instanceof Number))throw new JSONException("Missing number: "+key);return ((Number)map.get(key)).longValue();}
   public int getInt(String key){return Math.toIntExact(getLong(key));}
   public String getString(String key){if(!map.containsKey(key))throw new JSONException("Missing: "+key);return String.valueOf(map.get(key));}

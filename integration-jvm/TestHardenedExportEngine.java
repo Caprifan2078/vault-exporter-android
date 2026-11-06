@@ -58,6 +58,15 @@ public final class TestHardenedExportEngine {
   }
   public static void main(String[] args)throws Exception{
     long chat=4321;long[] shortIds=ids(250);File root=Files.createTempDirectory("hardened-engine-short-").toFile();
+    for(String field:new String[]{"self_destruct_type","self_destruct_in","auto_delete_in"}) {
+      File expiryRoot=Files.createTempDirectory("expiring-message-").toFile();
+      TdGateway expiry=new TdGateway(shortIds,expiryRoot);
+      expiry.setExpiringMessage(field,field.equals("self_destruct_type")
+          ?new JSONObject().put("@type","messageSelfDestructTypeImmediately"):0.5);
+      ByteArrayOutputStream output=new ByteArrayOutputStream();boolean refused=false;
+      try{send(expiryRoot,expiry,chat,output);}catch(SecurityException expected){refused=true;}
+      yes(refused && output.size()==0,"Expiring message exported: "+field);
+    }
     TdGateway fails=new TdGateway(shortIds,root);fails.failOnHistoryCall(9);boolean failed=false;
     try{send(root,fails,chat,new ByteArrayOutputStream());}
     catch(IOException ex){failed=ex.getMessage().contains("SIMULATED_NETWORK_DROP");}

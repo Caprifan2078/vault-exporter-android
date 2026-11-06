@@ -1,7 +1,7 @@
 name: QA Android Java compile and regression checks (NO Telegram login)
 on:
   push:
-    branches: [qa/disposable-real-telegram-20261102, qa/security-recovery-20261106]
+    branches: [qa/disposable-real-telegram-20261102, qa/security-recovery-20261106, qa/full-audit-20261106]
     paths:
       - '.github/workflows/qa-android-compile.yml'
       - 'app/**'
@@ -34,6 +34,8 @@ jobs:
           python3 ci-contract/verify_ci_contract.py
       - name: Fake TDLib export recovery and bounded memory
         run: bash integration-jvm/RUN_INTEGRATION_JVM.sh
+      - name: Encryption and offline regression suite
+        run: bash tests/RUN_TESTS_OFFLINE.sh
       - name: TDLib transport lifecycle
         run: bash transport-jvm/RUN_TRANSPORT_JVM.sh
       - name: JNI bridge against fake TDLib

@@ -14,6 +14,8 @@ public final class TdGateway {
   public void misrouteChatMetadata(){misroutedChatMetadata=true;}
   public void misrouteStalledProbe(){misrouteStalledProbe=true;}
   final Map<Integer,JSONObject> overrides=new HashMap<>();
+  String expiringField; Object expiringValue;
+  public void setExpiringMessage(String field,Object value){expiringField=field;expiringValue=value;}
   public void contentOverride(int position, JSONObject replacement){overrides.put(position,replacement);}
   public TdGateway(long[] ids,File root){this.ids=ids;this.root=root;}
   public void failOnHistoryCall(int n){failHistoryAt=n;}
@@ -66,12 +68,15 @@ public final class TdGateway {
           .put("content",content(6,ids[6])));
         return new JSONObject().put("messages",arr);
       }
-      for(int i=start;i<ids.length&&i<start+Math.min(7,limit);i++)
-        arr.put(new JSONObject().put("id",ids[i])
+      for(int i=start;i<ids.length&&i<start+Math.min(7,limit);i++) {
+        JSONObject message=new JSONObject().put("id",ids[i])
           .put("chat_id", (i==misroutedPosition ||
               (misrouteStalledProbe && from==ids[6]-1 && i==7))?9999L:req.getLong("chat_id"))
           .put("sender_id",new JSONObject().put("@type","messageSenderUser").put("user_id",55))
-          .put("content",overrides.getOrDefault(i,content(i,ids[i]))));
+          .put("content",overrides.getOrDefault(i,content(i,ids[i])));
+        if(i==1 && expiringField!=null) message.put(expiringField,expiringValue);
+        arr.put(message);
+      }
       return new JSONObject().put("messages",arr);
     }
     if(type.equals("downloadFile")){

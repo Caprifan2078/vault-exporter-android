@@ -1,7 +1,7 @@
 name: 'QA APK: runtime API credentials, official TDLib, NO account login in CI'
 on:
   push:
-    branches: [qa/runtime-api-test-account-20261102]
+    branches: [qa/runtime-api-test-account-20261102, qa/full-audit-20261106]
     paths:
       - '.github/workflows/qa-runtime-apk.yml'
       - 'app/**'
