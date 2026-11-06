@@ -27,6 +27,11 @@ public final class ExportEngine {
     public CachePrivacyException(String message) { super(message); }
     public CachePrivacyException(String message, Throwable cause) { super(message,cause); }
   }
+  /** Locally staged message cannot be safely matched to TDLib's cached state. */
+  public static final class CachedMessageStateException extends IOException {
+    public CachedMessageStateException(String message){super(message);}
+    public CachedMessageStateException(String message,Throwable cause){super(message,cause);}
+  }
   /** Stop BEFORE a huge cloud download consumes all app-private storage. */
   public static final class StorageCapacityException extends IOException {
     public final long requiredBytes,availableBytes;
@@ -341,11 +346,11 @@ public final class ExportEngine {
   }
   private static long validatedEditDate(JSONObject msg)throws IOException {
     Object value=msg.opt("edit_date");
-    if(!(value instanceof Number))throw new IOException("Нет корректной даты изменения сообщения");
+    if(!(value instanceof Number))throw new CachedMessageStateException("Нет корректной даты изменения сообщения");
     double date=((Number)value).doubleValue();
     if(Double.isNaN(date) || Double.isInfinite(date) || date<0 ||
         date>Integer.MAX_VALUE || date!=Math.floor(date))
-      throw new IOException("Недопустимая дата изменения сообщения");
+      throw new CachedMessageStateException("Недопустимая дата изменения сообщения");
     return (long)date;
   }
   private static List<Attachment> attachments(JSONObject msg)throws IOException {
@@ -615,18 +620,18 @@ public final class ExportEngine {
             JSONObject snapshot=new JSONObject(row);
             long id=snapshot.optLong("id");
             if(id<=0 || snapshot.optLong("chat_id")!=chatId)
-              throw new IOException("Повреждён сохранённый идентификатор сообщения");
+              throw new CachedMessageStateException("Повреждён сохранённый идентификатор сообщения");
             JSONObject current;
             try { current=safeRead(req("getMessageLocally","chat_id",chatId).put("message_id",id),30); }
             catch(TdGateway.TelegramError error) {
-              if(error.code==404)throw new IOException("Сообщение недоступно в локальной базе TDLib. Прогресс сохранён; проверка остановлена.",error);
+              if(error.code==404)throw new CachedMessageStateException("Сообщение недоступно в локальной базе TDLib. Прогресс сохранён; проверка остановлена.",error);
               throw error;
             }
             if(current.optLong("id")!=id || current.optLong("chat_id")!=chatId)
-              throw new IOException("TDLib вернула другое сообщение при проверке сохранённого прогресса");
+              throw new CachedMessageStateException("TDLib вернула другое сообщение при проверке сохранённого прогресса");
             checkMessageRestriction(current);
             if(validatedEditDate(snapshot)!=validatedEditDate(current))
-              throw new IOException("Сообщение изменилось после сохранения прогресса. Экспорт остановлен.");
+              throw new CachedMessageStateException("Сообщение изменилось после сохранения прогресса. Экспорт остановлен.");
           }
         }
         if(page%10==0 || page==s.pages)
