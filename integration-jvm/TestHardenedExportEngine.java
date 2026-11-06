@@ -129,9 +129,9 @@ public final class TestHardenedExportEngine {
       send(protectRoot,new TdGateway(ids(3),protectRoot),chat,resumed);
       checkArchive(resumed.toByteArray(),ids(3),0);
     }
-    for(int mode=1;mode<=9;mode++) {
+    for(int mode=1;mode<=11;mode++) {
       File localRoot=Files.createTempDirectory("cached-message-change-").toFile();
-      long[] sample=ids(mode==9?4:3);
+      long[] sample=ids(mode==9 || mode==11?4:3);
       TdGateway changed=new TdGateway(sample,localRoot);changed.setLocalFault(mode);
       ByteArrayOutputStream out=new ByteArrayOutputStream();boolean stopped=false;
       try{send(localRoot,changed,chat,out);}
@@ -139,8 +139,13 @@ public final class TestHardenedExportEngine {
       yes(stopped && out.size()==0,"Unsafe cached-message state accepted: "+mode);
       ByteArrayOutputStream recoveredLocal=new ByteArrayOutputStream();
       send(localRoot,new TdGateway(sample,localRoot),chat,recoveredLocal);
-      checkArchive(recoveredLocal.toByteArray(),sample,mode==9?1:0);
+      checkArchive(recoveredLocal.toByteArray(),sample,(mode==9 || mode==11)?1:0);
     }
+    File harmlessRoot=Files.createTempDirectory("cache-state-changed-").toFile();
+    TdGateway harmless=new TdGateway(ids(4),harmlessRoot);harmless.setLocalFault(12);
+    ByteArrayOutputStream harmlessArchive=new ByteArrayOutputStream();
+    send(harmlessRoot,harmless,chat,harmlessArchive);
+    checkArchive(harmlessArchive.toByteArray(),ids(4),1);
     TdGateway fails=new TdGateway(shortIds,root);fails.failOnHistoryCall(9);boolean failed=false;
     try{send(root,fails,chat,new ByteArrayOutputStream());}
     catch(IOException ex){failed=ex.getMessage().contains("SIMULATED_NETWORK_DROP");}

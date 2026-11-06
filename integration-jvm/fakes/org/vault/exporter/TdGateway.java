@@ -104,6 +104,11 @@ public final class TdGateway {
       if(localFault==7 && index==1)msg.put("content",new JSONObject().put("@type","messageText").put("text",new JSONObject().put("text","changed")));
       if(localFault==8 && index==1)msg.put("content",new JSONObject().put("@type","messageContact"));
       if(localFault==9 && index==3)msg.optJSONObject("content").optJSONObject("voice_note").optJSONObject("voice").put("remote",new JSONObject().put("unique_id","different-media"));
+      if(localFault==10 && index==1)msg.optJSONObject("content").optJSONObject("text")
+        .put("entities",new JSONArray().put(new JSONObject().put("offset",0).put("length",2).put("type",new JSONObject().put("@type","textEntityTypeBold"))));
+      if(localFault==11 && index==3)msg.optJSONObject("content").put("caption",new JSONObject().put("text","changed"));
+      if(localFault==12 && index==3)msg.optJSONObject("content").optJSONObject("voice_note").optJSONObject("voice")
+        .put("local",new JSONObject().put("path","/synthetic/cache").put("is_downloading_completed",true));
       return msg;
     }
     if(type.equals("getChatHistory")){
