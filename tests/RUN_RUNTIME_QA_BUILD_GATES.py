@@ -36,4 +36,6 @@ for value in (
 assert '.put("use_test_dc",BuildConfig.TELEGRAM_TEST_DC)' in a
 assert a.find('if (BuildConfig.QA_PRODUCTION && !nativeProbePassed)') < a.find('showQaApiSetup();')
 assert 'FLAG_SECURE' in a
+workflow=(r/'.github/workflows/qa-runtime-apk.yml').read_text()
+assert '"$SIGNER" verify --verbose --print-certs "$APK"' in workflow, 'APK signature verification missing'
 print('PASS: QA runtime API credentials never hard-coded, native preflight and production opt-in gates present.')

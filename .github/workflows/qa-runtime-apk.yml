@@ -73,6 +73,9 @@ jobs:
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
           "$AAPT" dump badging "$APK" | grep -F "package: name='org.vault.exporter.runtimeqa'"
           "$AAPT" dump permissions "$APK" | grep -F 'android.permission.INTERNET'
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
+          test -x "$SIGNER"
+          "$SIGNER" verify --verbose --print-certs "$APK"
           ! "$AAPT" dump permissions "$APK" | grep -E 'READ_CONTACTS|READ_SMS|MANAGE_EXTERNAL_STORAGE'
           BC=app/build/generated/source/buildConfig/qaRuntime/org/vault/exporter/BuildConfig.java
           grep -Eq 'TELEGRAM_TEST_DC = false;' "$BC"
