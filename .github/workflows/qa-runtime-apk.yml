@@ -104,6 +104,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: VAULT-REAL-TELEGRAM-RUNTIME-API-QA-UNTESTED
@@ -128,4 +129,5 @@ jobs:
             adb install qa-apk/VaultExporter_REAL_TG_RUNTIME_QA_20261102.apk &&
             adb shell am start -W -n org.vault.exporter.runtimeqa/org.vault.exporter.MainActivity &&
             adb shell pidof org.vault.exporter.runtimeqa &&
-            adb shell dumpsys activity activities | grep -F 'org.vault.exporter.runtimeqa'
+            adb shell dumpsys activity activities | grep -F 'org.vault.exporter.runtimeqa' &&
+            python3 ci/qa-runtime-native-probe.py

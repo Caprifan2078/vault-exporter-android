@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Offline Android UI probe. Never enters credentials or connects to Telegram."""
+import re
+import subprocess
+import time
+import xml.etree.ElementTree as ET
+
+def adb(*args):
+    return subprocess.check_output(["adb", *args], timeout=35).decode("utf-8", "replace")
+
+def screen():
+    text = adb("exec-out", "uiautomator", "dump", "/dev/tty")
+    start, end = text.find("<?xml"), text.rfind("</hierarchy>")
+    if start < 0 or end < 0:
+        raise RuntimeError("UI hierarchy unavailable")
+    return ET.fromstring(text[start:end + len("</hierarchy>")])
+
+node = None
+for attempt in range(4):
+    root = screen()
+    node = next((n for n in root.iter("node") if "Сначала проверить TDLib без аккаунта" in n.get("text", "")), None)
+    if node is not None:
+        break
+    adb("shell", "input", "swipe", "500", "1550", "500", "600", "400")
+if node is None:
+    raise RuntimeError("Offline TDLib diagnostic button not found")
+coords = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
+if not coords:
+    raise RuntimeError("Diagnostic button has invalid bounds")
+x1, y1, x2, y2 = map(int, coords.groups())
+adb("shell", "input", "tap", str((x1+x2)//2), str((y1+y2)//2))
+deadline = time.monotonic() + 40
+while time.monotonic() < deadline:
+    time.sleep(1)
+    texts = " ".join(n.get("text", "") for n in screen().iter("node"))
+    if "TDLIB_OFFLINE_PROBE_PASS" in texts:
+        print("PASS: real TDLib native offline roundtrip on emulator, no account")
+        break
+    if "TDLIB_OFFLINE_PROBE_FAIL" in texts:
+        raise RuntimeError("TDLib offline diagnostic reported failure")
+else:
+    raise RuntimeError("TDLib offline diagnostic timed out")
