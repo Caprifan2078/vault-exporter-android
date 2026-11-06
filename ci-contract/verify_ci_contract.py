@@ -44,4 +44,8 @@ assert "bash native-host-test/RUN_NATIVE_HOST_TEST.sh" in hardened, "JNI CI miss
 assert "bash transport-jvm/RUN_TRANSPORT_JVM.sh" in hardened, "TDLib transport CI missing"
 assert "bash native-host-test/RUN_NATIVE_HOST_TEST.sh" in all_tests, "Local JNI smoke missing"
 assert "emulator-offline-smoke.sh" in emulator, "Offline emulator smoke missing"
+activity = read("app/src/main/java/org/vault/exporter/MainActivity.java")
+assert activity.count("Формат .tva пока не открывается в Telegram Archive Viewer") >= 2, "Missing compatibility warning before or after export"
+assert "Читалка сможет показать сохранённое" not in activity, "Unverified viewer compatibility claim"
 print("PASS CI contracts: pinned TDLib, offline debug, isolated test DC, no production auto-enable")
+

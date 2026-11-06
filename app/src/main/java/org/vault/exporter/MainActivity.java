@@ -830,6 +830,7 @@ public final class MainActivity extends Activity {
     button("1. Выбрать переписку",this::chooseChat);
     button("2. Скачать зашифрованный архив",this::requestPassphrase);
     message("Приложение загружает доступные фото, видео и документы через Telegram, в том числе отсутствующие в кэше. Пароль защищает сохранённый архив.");
+    message("Формат .tva пока не открывается в Telegram Archive Viewer. Совместимость ещё не реализована.");
     button("Завершить сеанс экспортёра",this::confirmLogout);
     button("Если загрузка не удалась: удалить её прогресс",this::confirmResetProgress);
   }
@@ -1037,7 +1038,8 @@ public final class MainActivity extends Activity {
           message("Архив проверен! Сообщений: "+summary.messages+", медиафайлов: "+summary.media+
             ", пропущенных файлов: "+summary.missing+". ZIP-записей: "+entries);
           if(summary.missing!=0 || !summary.historyFinished)
-            message("ВНИМАНИЕ: архив неполный. Читалка сможет показать сохранённое, но проверь пропущенные файлы.");
+            message("ВНИМАНИЕ: архив неполный. Проверь пропущенные файлы.");
+          message("Формат .tva пока не открывается в Telegram Archive Viewer. Совместимость ещё не реализована.");
           message("Пароль сохранён только в твоей памяти: приложение не сможет его восстановить.");
           button("Завершить сеанс экспортёра",this::confirmLogout);
           button("Выбрать другой чат",()->{clearUi();showReady();});
@@ -1132,3 +1134,4 @@ public final class MainActivity extends Activity {
     super.onDestroy();
   }
 }
+
