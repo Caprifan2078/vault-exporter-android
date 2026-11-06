@@ -9,6 +9,8 @@ public final class TdGateway {
   private final long client;
   private final ConcurrentHashMap<String, CompletableFuture<JSONObject>> pending = new ConcurrentHashMap<>();
   private final AtomicLong sequence = new AtomicLong();
+  // Serialize request dispatch with shutdown: no request may escape after stop().
+  private final Object sendLock = new Object();
   private final Listener listener;
   private final Thread reader;
   private volatile boolean running = true;
@@ -37,16 +39,18 @@ public final class TdGateway {
     reader.start();
   }
   public CompletableFuture<JSONObject> call(JSONObject request) {
-    if(!running)throw new IllegalStateException("TDLib client is closed");
-    String id = Long.toString(sequence.incrementAndGet());
-    CompletableFuture<JSONObject> result = new CompletableFuture<>();
-    pending.put(id, result);
-    // Do not retain timed-out, cancelled or otherwise completed calls indefinitely.
-    // Remove only OUR future: late replies must never resolve a different request.
-    result.whenComplete((value, error) -> pending.remove(id, result));
-    try { request.put("@extra", id); TdNative.send(client, request.toString()); }
-    catch (Exception e) { result.completeExceptionally(e); }
-    return result;
+    synchronized(sendLock) {
+      if(!running)throw new IllegalStateException("TDLib client is closed");
+      String id = Long.toString(sequence.incrementAndGet());
+      CompletableFuture<JSONObject> result = new CompletableFuture<>();
+      pending.put(id, result);
+      // Do not retain timed-out, cancelled or otherwise completed calls indefinitely.
+      // Remove only OUR future: late replies must never resolve a different request.
+      result.whenComplete((value, error) -> pending.remove(id, result));
+      try { request.put("@extra", id); TdNative.send(client, request.toString()); }
+      catch (Exception e) { result.completeExceptionally(e); }
+      return result;
+    }
   }
   public JSONObject await(JSONObject request, long timeoutSeconds) throws Exception {
     CompletableFuture<JSONObject> future = call(request);
@@ -56,6 +60,7 @@ public final class TdGateway {
     } catch (TimeoutException | InterruptedException ex) {
       // No retry here: the caller owns resume/retry policy. Late responses are ignored.
       future.cancel(false);
+      if(ex instanceof InterruptedException) Thread.currentThread().interrupt();
       throw ex;
     }
     if ("error".equals(response.optString("@type"))) {
@@ -74,13 +79,15 @@ public final class TdGateway {
     return req;
   }
   public void stop() {
-    if(!running)return;
-    // Close the native client while preserving the separate TDLib authorization for restart.
-    // This is NOT logOut: only the explicit button ends the Telegram account session.
-    try{TdNative.send(client,"{\"@type\":\"close\"}");}catch(Throwable ignored){}
-    running=false;
-    for(CompletableFuture<JSONObject> v:pending.values())v.cancel(true);
-    pending.clear();
+    synchronized(sendLock) {
+      if(!running)return;
+      running=false;
+      // Close the native client while preserving the separate TDLib authorization for restart.
+      // This is NOT logOut: only the explicit button ends the Telegram account session.
+      try{TdNative.send(client,"{\"@type\":\"close\"}");}catch(Throwable ignored){}
+      for(CompletableFuture<JSONObject> v:pending.values())v.cancel(true);
+      pending.clear();
+    }
     if(Thread.currentThread()!=reader){
       try{reader.join(1100);}catch(InterruptedException e){Thread.currentThread().interrupt();}
     }
