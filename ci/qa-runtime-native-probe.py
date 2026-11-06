@@ -17,13 +17,15 @@ def screen():
 
 def probe():
     node = None
-    for attempt in range(4):
+    for attempt in range(12):
         root = screen()
         node = next((n for n in root.iter("node") if "Сначала проверить TDLib без аккаунта" in n.get("text", "")), None)
         if node is not None:
             break
-        adb("shell", "input", "swipe", "500", "1550", "500", "600", "400")
+        time.sleep(1)
+        adb("shell", "input", "swipe", "500", "1550", "500", "400", "400")
     if node is None:
+        print("Visible text:", [n.get("text", "") for n in root.iter("node") if n.get("text", "")])
         raise RuntimeError("Offline TDLib diagnostic button not found")
     coords = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
     if not coords:

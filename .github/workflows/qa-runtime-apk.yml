@@ -99,7 +99,7 @@ jobs:
           path: dist/
           retention-days: 1
 
-  # Require each native probe's dialog to confirm close and reopen.
+  # Wait for the diagnostic control and require each fresh success dialog.
   offline-emulator-smoke:
     needs: runtime-apk
     runs-on: ubuntu-24.04
