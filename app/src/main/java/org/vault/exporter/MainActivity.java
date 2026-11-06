@@ -676,9 +676,26 @@ public final class MainActivity extends Activity {
         JSONObject stateObj = td.await(TdGateway.cmd("getAuthorizationState"),30);
         onAuthorizationState(stateObj);
       } catch(Throwable e) {
-        showStatus("Ошибка TDLib: " + e.getClass().getSimpleName() + ". Сеанс не подтверждён.");
-        runOnUiThread(() -> {clearUi(); button("Вернуться", this::showWelcome);});
+        // A failed initialization must not leave a half-open TDLib client.
+        // Otherwise the UI says "already connected" and retry is impossible.
+        abandonFailedConnection("Подключение TDLib не удалось. Сеанс не подтверждён.");
       }
+    });
+  }
+  /** A failed TDLib initialization is not an authorized session.
+   * Tear down the half-open client, clear runtime credentials and allow an explicit retry. */
+  private void abandonFailedConnection(String reason) {
+    TdGateway abandoned=td;
+    td=null;
+    initializing.set(false);
+    qaApiId=0;
+    qaApiHash="";
+    if(abandoned!=null) abandoned.stop();
+    showStatus(reason);
+    runOnUiThread(() -> {
+      if(isFinishing() || isDestroyed()) return;
+      clearUi();
+      button("Вернуться к безопасному началу",this::showWelcome);
     });
   }
   private int dp(int value) { return (int)(getResources().getDisplayMetrics().density * value + .5f); }
@@ -726,8 +743,13 @@ public final class MainActivity extends Activity {
             .put("device_model",android.os.Build.MODEL).put("system_version",android.os.Build.VERSION.RELEASE)
             .put("application_version","0.9-test-gated-alpha");
           td.await(params,30);
+          // Once TDLib accepts its parameters, the Activity no longer needs
+          // to retain a second copy of the developer API credentials.
+          if(BuildConfig.QA_RUNTIME) {qaApiId=0;qaApiHash="";}
           } finally {Arrays.fill(secret,(byte)0);}
-        } catch(Exception e) { initializing.set(false); showStatus("Не удалось настроить TDLib: " + e.getMessage()); }
+        } catch(Exception e) {
+          abandonFailedConnection("TDLib отклонила параметры подключения. Повтори настройку API в приложении.");
+        }
       });
       return;
     }
