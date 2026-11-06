@@ -129,7 +129,7 @@ public final class TestHardenedExportEngine {
       send(protectRoot,new TdGateway(ids(3),protectRoot),chat,resumed);
       checkArchive(resumed.toByteArray(),ids(3),0);
     }
-    for(int mode=1;mode<=4;mode++) {
+    for(int mode=1;mode<=6;mode++) {
       File localRoot=Files.createTempDirectory("cached-message-change-").toFile();
       TdGateway changed=new TdGateway(ids(3),localRoot);changed.setLocalFault(mode);
       ByteArrayOutputStream out=new ByteArrayOutputStream();boolean stopped=false;

@@ -339,6 +339,15 @@ public final class ExportEngine {
     if(c!=null&&c.optBoolean("is_secret",false))
       throw new SecurityException("Нельзя экспортировать самоисчезающее медиа: "+mid);
   }
+  private static long validatedEditDate(JSONObject msg)throws IOException {
+    Object value=msg.opt("edit_date");
+    if(!(value instanceof Number))throw new IOException("Нет корректной даты изменения сообщения");
+    double date=((Number)value).doubleValue();
+    if(Double.isNaN(date) || Double.isInfinite(date) || date<0 ||
+        date>Integer.MAX_VALUE || date!=Math.floor(date))
+      throw new IOException("Недопустимая дата изменения сообщения");
+    return (long)date;
+  }
   private static List<Attachment> attachments(JSONObject msg)throws IOException {
     checkMessageRestriction(msg);
     long mid=msg.optLong("id");
@@ -616,7 +625,7 @@ public final class ExportEngine {
             if(current.optLong("id")!=id || current.optLong("chat_id")!=chatId)
               throw new IOException("TDLib вернула другое сообщение при проверке сохранённого прогресса");
             checkMessageRestriction(current);
-            if(snapshot.optLong("edit_date",0)!=current.optLong("edit_date",0))
+            if(validatedEditDate(snapshot)!=validatedEditDate(current))
               throw new IOException("Сообщение изменилось после сохранения прогресса. Экспорт остановлен.");
           }
         }

@@ -93,10 +93,12 @@ public final class TdGateway {
       if(index<0 || (localFault==2 && index==1))throw new TelegramError(404);
       JSONObject msg=new JSONObject().put("id",target)
         .put("chat_id",localFault==3 && index==1?9999L:req.getLong("chat_id"))
-        .put("can_be_saved",!(localFault==1 && index==1))
+        .put("can_be_saved",!(localFault==1 && index==1)).put("edit_date",0)
         .put("self_destruct_in",0).put("auto_delete_in",0)
         .put("content",overrides.getOrDefault(index,content(index,target)));
       if(localFault==4 && index==1)msg.put("edit_date",123);
+      if(localFault==5 && index==1)msg.put("edit_date","invalid");
+      if(localFault==6 && index==1)msg.remove("edit_date");
       return msg;
     }
     if(type.equals("getChatHistory")){
@@ -115,7 +117,7 @@ public final class TdGateway {
           .put("chat_id", (i==misroutedPosition ||
               (misrouteStalledProbe && from==ids[6]-1 && i==7))?9999L:req.getLong("chat_id"))
           .put("sender_id",new JSONObject().put("@type","messageSenderUser").put("user_id",55))
-          .put("can_be_saved",true).put("self_destruct_in",0).put("auto_delete_in",0)
+          .put("can_be_saved",true).put("edit_date",0).put("self_destruct_in",0).put("auto_delete_in",0)
           .put("content",overrides.getOrDefault(i,content(i,ids[i])));
         if(i==1 && omittedTimer!=null)message.remove(omittedTimer);
         if(i==1 && omitMessageCanBeSaved)message.remove("can_be_saved");

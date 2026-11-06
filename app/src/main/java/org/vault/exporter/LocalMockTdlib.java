@@ -78,7 +78,7 @@ public final class LocalMockTdlib implements ExportEngine.Transport {
     JSONObject msg=obj("message").put("id",id).put("chat_id",CHAT_ID)
       .put("date",1726000000-index*135).put("sender_id",
         obj("messageSenderUser").put("user_id",sender))
-      .put("is_outgoing",sender==1001).put("can_be_saved",true).put("self_destruct_in",0).put("auto_delete_in",0).put("content",c);
+      .put("is_outgoing",sender==1001).put("can_be_saved",true).put("edit_date",0).put("self_destruct_in",0).put("auto_delete_in",0).put("content",c);
     if(index>0 && index%11==0)msg.put("reply_to",obj("messageReplyToMessage")
       .put("message_id",id+17));
     if(index>0 && index%13==0)msg.put("forward_info",new JSONObject()
