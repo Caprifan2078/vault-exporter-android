@@ -12,6 +12,8 @@ public final class TdGateway {
   final long[] ids;final File root;
   int calls,failHistoryAt,failFileId,failChatAt;
   int chatCalls,protectOnChatCall;
+  int localFault;
+  public void setLocalFault(int mode){localFault=mode;}
   public void protectOnChatCall(int n){protectOnChatCall=n;}
   int fakePageSize=7;
   public void setPageSize(int value){if(value<1||value>100)throw new IllegalArgumentException();fakePageSize=value;}
@@ -84,6 +86,18 @@ public final class TdGateway {
       if(participantFailure==5)throw new IOException("synthetic network outage");
       if(participantFailure==6)throw new java.util.concurrent.TimeoutException("synthetic timeout");
       return new JSONObject().put("first_name","Test");
+    }
+    if(type.equals("getMessageLocally")){
+      long target=req.getLong("message_id");int lo=0,hi=ids.length-1,index=-1;
+      while(lo<=hi){int mid=(lo+hi)>>>1;if(ids[mid]==target){index=mid;break;}if(ids[mid]>target)lo=mid+1;else hi=mid-1;}
+      if(index<0 || (localFault==2 && index==1))throw new TelegramError(404);
+      JSONObject msg=new JSONObject().put("id",target)
+        .put("chat_id",localFault==3 && index==1?9999L:req.getLong("chat_id"))
+        .put("can_be_saved",!(localFault==1 && index==1))
+        .put("self_destruct_in",0).put("auto_delete_in",0)
+        .put("content",overrides.getOrDefault(index,content(index,target)));
+      if(localFault==4 && index==1)msg.put("edit_date",123);
+      return msg;
     }
     if(type.equals("getChatHistory")){
       calls++;if(calls==failHistoryAt)throw new IOException("SIMULATED_NETWORK_DROP");

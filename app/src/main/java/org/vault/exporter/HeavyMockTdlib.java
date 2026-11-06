@@ -112,6 +112,13 @@ public final class HeavyMockTdlib implements ExportEngine.Transport {
         return type("user").put("id",id).put("first_name",id==1001?"Тест-А":"Тест-Б")
           .put("last_name","Вымышленный");
       }
+      case "getMessageLocally": {
+        if(request.getLong("chat_id")!=CHAT_ID)throw new SecurityException("Unknown synthetic chat");
+        long delta=START_ID-request.getLong("message_id");
+        if(delta<0 || delta%STEP!=0 || delta/STEP>=MESSAGE_COUNT)
+          throw new IOException("Synthetic local message unavailable");
+        return message((int)(delta/STEP));
+      }
       case "getChatHistory": {
         if(request.getLong("chat_id")!=CHAT_ID)
           throw new SecurityException("Unknown synthetic chat ID");

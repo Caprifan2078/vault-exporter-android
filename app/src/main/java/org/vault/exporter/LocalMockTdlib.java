@@ -138,6 +138,13 @@ public final class LocalMockTdlib implements ExportEngine.Transport {
         return obj("user").put("id",id).put("first_name",id==1001?"Алиса":"Борис")
           .put("last_name","(учебный)");
       }
+      case "getMessageLocally": {
+        if(request.getLong("chat_id")!=CHAT_ID)throw new SecurityException("Unknown synthetic chat");
+        long delta=100000L-request.getLong("message_id");
+        if(delta<0 || delta%17L!=0 || delta/17L>=MESSAGE_COUNT)
+          throw new IOException("Synthetic local message unavailable");
+        return message((int)(delta/17L));
+      }
       case "getChatHistory": {
         if(request.getLong("chat_id")!=CHAT_ID)throw new SecurityException("Unknown synthetic history");
         // Return newest-first short pages with one overlapping cursor item.

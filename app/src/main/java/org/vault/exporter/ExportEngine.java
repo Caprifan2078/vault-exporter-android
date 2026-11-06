@@ -595,7 +595,36 @@ public final class ExportEngine {
         stage.checkpoint(s);
         progress.show("Сохранено: "+s.messages+" сообщений · "+s.media+" медиа. Можно продолжить после перерыва.");
       }
-      // Recheck current chat restrictions immediately before writing output.
+      // Recheck cached message state without making network requests. If TDLib
+      // cannot verify a message locally, stop without discarding the checkpoint.
+      progress.show("Проверяем сохранённые сообщения в локальной базе TDLib…");
+      for(int page=1;page<=s.pages;page++) {
+        try(BufferedReader reader=new BufferedReader(new InputStreamReader(stage.openPage(page),StandardCharsets.UTF_8))) {
+          String row;
+          while((row=reader.readLine())!=null) {
+            if(row.isEmpty())continue;
+            JSONObject snapshot=new JSONObject(row);
+            long id=snapshot.optLong("id");
+            if(id<=0 || snapshot.optLong("chat_id")!=chatId)
+              throw new IOException("Повреждён сохранённый идентификатор сообщения");
+            JSONObject current;
+            try { current=safeRead(req("getMessageLocally","chat_id",chatId).put("message_id",id),30); }
+            catch(TdGateway.TelegramError error) {
+              if(error.code==404)throw new IOException("Сообщение недоступно в локальной базе TDLib. Прогресс сохранён; проверка остановлена.",error);
+              throw error;
+            }
+            if(current.optLong("id")!=id || current.optLong("chat_id")!=chatId)
+              throw new IOException("TDLib вернула другое сообщение при проверке сохранённого прогресса");
+            checkMessageRestriction(current);
+            if(snapshot.optLong("edit_date",0)!=current.optLong("edit_date",0))
+              throw new IOException("Сообщение изменилось после сохранения прогресса. Экспорт остановлен.");
+          }
+        }
+        if(page%10==0 || page==s.pages)
+          progress.show("Проверено сохранённых страниц: "+page+"/"+s.pages);
+      }
+      // This reflects TDLib's locally known state; concurrent or unseen server
+      // changes cannot be ruled out without a live server-side snapshot.
       chat=verifyChat(chatId);
       // No downloads required during finalization; partial final .tva may be recreated from staging.
       progress.show("Все доступные данные получены. Собираем защищённый архив…");
