@@ -71,7 +71,7 @@ public final class TestHardenedExportEngine {
     File legacyRoot=Files.createTempDirectory("legacy-expiring-stage-").toFile();
     byte[] legacySecret=new byte[32];Arrays.fill(legacySecret,(byte)0x5c);
     try(ResumeStore legacy=new ResumeStore(new File(legacyRoot,"export-progress"),chat,legacySecret)) {
-      JSONObject message=new JSONObject().put("id",123).put("chat_id",chat)
+      JSONObject message=new JSONObject().put("id",123).put("chat_id",chat).put("can_be_saved",true)
         .put("auto_delete_in",30).put("content",new JSONObject().put("@type","messageText"));
       legacy.putPage(1,(message.toString()+"\n").getBytes(StandardCharsets.UTF_8),new byte[0]);
       legacy.checkpoint(new ResumeStore.State(chat,123,1,1,0,true));
@@ -80,6 +80,20 @@ public final class TestHardenedExportEngine {
     try{send(legacyRoot,new TdGateway(shortIds,legacyRoot),chat,legacyOutput);}
     catch(SecurityException expected){legacyRefused=true;}
     yes(legacyRefused && legacyOutput.size()==0,"Legacy expiring checkpoint was exported");
+    for(int mode=0;mode<7;mode++) {
+      File restrictionRoot=Files.createTempDirectory("invalid-restriction-").toFile();
+      TdGateway gateway=new TdGateway(shortIds,restrictionRoot);
+      if(mode==0)gateway.omitMessageCanBeSaved();
+      if(mode==1)gateway.setExpiringMessage("can_be_saved",false);
+      if(mode==2)gateway.setExpiringMessage("can_be_saved","true");
+      if(mode==3)gateway.omitChatProtection();
+      if(mode==4)gateway.setExpiringMessage("auto_delete_in","bad");
+      if(mode==5)gateway.setExpiringMessage("self_destruct_type","bad");
+      if(mode==6)gateway.setExpiringMessage("auto_delete_in",null);
+      ByteArrayOutputStream output=new ByteArrayOutputStream();boolean denied=false;
+      try{send(restrictionRoot,gateway,chat,output);}catch(SecurityException expected){denied=true;}
+      yes(denied && output.size()==0,"Invalid restriction accepted, case "+mode);
+    }
     TdGateway fails=new TdGateway(shortIds,root);fails.failOnHistoryCall(9);boolean failed=false;
     try{send(root,fails,chat,new ByteArrayOutputStream());}
     catch(IOException ex){failed=ex.getMessage().contains("SIMULATED_NETWORK_DROP");}

@@ -320,13 +320,22 @@ public final class ExportEngine {
   private static void checkMessageRestriction(JSONObject msg) {
     long mid=msg.optLong("id");
     JSONObject c=msg.optJSONObject("content");
-    if(msg.has("can_be_saved")&&!msg.optBoolean("can_be_saved",true))
+    if(!Boolean.TRUE.equals(msg.opt("can_be_saved")))
       throw new SecurityException("Сохранение сообщения запрещено Telegram: "+mid);
     // Destruction and auto-delete metadata belongs to the message, not only
     // to its content. Do not preserve messages that Telegram will remove.
-    if(msg.optJSONObject("self_destruct_type")!=null ||
-        msg.optDouble("self_destruct_in",0)>0 || msg.optDouble("auto_delete_in",0)>0)
+    Object selfDestruct=msg.opt("self_destruct_type");
+    if(selfDestruct!=null && selfDestruct!=JSONObject.NULL)
       throw new SecurityException("Нельзя экспортировать самоудаляющееся сообщение: "+mid);
+    for(String field:new String[]{"self_destruct_in","auto_delete_in"}) {
+      Object value=msg.opt(field);
+      if(msg.has(field)) {
+        if(!(value instanceof Number))throw new SecurityException("Некорректный таймер сообщения: "+mid);
+        double seconds=((Number)value).doubleValue();
+        if(Double.isNaN(seconds)||Double.isInfinite(seconds)||seconds!=0)
+          throw new SecurityException("Нельзя экспортировать самоудаляющееся сообщение: "+mid);
+      }
+    }
     if(c!=null&&c.optBoolean("is_secret",false))
       throw new SecurityException("Нельзя экспортировать самоисчезающее медиа: "+mid);
   }
@@ -443,7 +452,7 @@ public final class ExportEngine {
     JSONObject chat=safeRead(req("getChat","chat_id",chatId),30);
     if (!chat.has("id") || chat.optLong("id") != chatId)
       throw new IOException("TDLib вернула другой чат при проверке выбранной переписки");
-    if(chat.optBoolean("has_protected_content",false))throw new SecurityException("Сохранение содержимого этого чата ограничено");
+    if(!Boolean.FALSE.equals(chat.opt("has_protected_content")))throw new SecurityException("Сохранение содержимого этого чата ограничено или не подтверждено");
     if("chatTypeSecret".equals(object(chat,"type")==null?"":object(chat,"type").optString("@type")))
       throw new SecurityException("Облачный API не экспортирует секретные чаты");
     byte[] sessionSecret=new SessionSecrets(app).getOrCreate();

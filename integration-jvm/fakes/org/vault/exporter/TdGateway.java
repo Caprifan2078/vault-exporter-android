@@ -15,7 +15,10 @@ public final class TdGateway {
   public void misrouteStalledProbe(){misrouteStalledProbe=true;}
   final Map<Integer,JSONObject> overrides=new HashMap<>();
   String expiringField; Object expiringValue;
+  boolean omitMessageCanBeSaved,omitChatProtection;
   public void setExpiringMessage(String field,Object value){expiringField=field;expiringValue=value;}
+  public void omitMessageCanBeSaved(){omitMessageCanBeSaved=true;}
+  public void omitChatProtection(){omitChatProtection=true;}
   public void contentOverride(int position, JSONObject replacement){overrides.put(position,replacement);}
   public TdGateway(long[] ids,File root){this.ids=ids;this.root=root;}
   public void failOnHistoryCall(int n){failHistoryAt=n;}
@@ -54,7 +57,9 @@ public final class TdGateway {
     String type=req.optString("@type");
     if(type.equals("getChat")){
       if(protectedChat)return new JSONObject().put("id",req.getLong("chat_id")).put("has_protected_content",true);
-      return new JSONObject().put("id",misroutedChatMetadata?9999L:req.getLong("chat_id")).put("title","Synthetic").put("has_protected_content",false).put("type",new JSONObject().put("@type",secretChat?"chatTypeSecret":"chatTypePrivate"));
+      JSONObject chat=new JSONObject().put("id",misroutedChatMetadata?9999L:req.getLong("chat_id")).put("title","Synthetic").put("type",new JSONObject().put("@type",secretChat?"chatTypeSecret":"chatTypePrivate"));
+      if(!omitChatProtection)chat.put("has_protected_content",false);
+      return chat;
     }
     if(type.equals("getUser"))return new JSONObject().put("first_name","Test");
     if(type.equals("getChatHistory")){
@@ -64,7 +69,7 @@ public final class TdGateway {
       if(from>0)while(start<ids.length&&ids[start]>from)start++;
       if(start>=ids.length)return new JSONObject().put("messages",arr);
       if(misrouteStalledProbe && from==ids[6]){
-        arr.put(new JSONObject().put("id",ids[6]).put("chat_id",req.getLong("chat_id"))
+        arr.put(new JSONObject().put("id",ids[6]).put("chat_id",req.getLong("chat_id")).put("can_be_saved",true)
           .put("content",content(6,ids[6])));
         return new JSONObject().put("messages",arr);
       }
@@ -73,7 +78,9 @@ public final class TdGateway {
           .put("chat_id", (i==misroutedPosition ||
               (misrouteStalledProbe && from==ids[6]-1 && i==7))?9999L:req.getLong("chat_id"))
           .put("sender_id",new JSONObject().put("@type","messageSenderUser").put("user_id",55))
+          .put("can_be_saved",true)
           .put("content",overrides.getOrDefault(i,content(i,ids[i])));
+        if(i==1 && omitMessageCanBeSaved)message.remove("can_be_saved");
         if(i==1 && expiringField!=null) message.put(expiringField,expiringValue);
         arr.put(message);
       }
