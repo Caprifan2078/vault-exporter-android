@@ -611,10 +611,15 @@ public final class ExportEngine {
           line.append(msg.toString()).append('\n');
           for(Attachment attachment:attached){
             int fileId=attachment.id();
+            JSONObject remote=attachment.file.optJSONObject("remote");
+            String uniqueId=remote==null?"":remote.optString("unique_id","");
             ResumeStore.Media saved;
-            if(stage.hasMedia(msgId,fileId)){
+            if(stage.hasMediaIdentity(msgId,fileId,uniqueId)){
               saved=stage.mediaFingerprint(msgId,fileId);
             }else{
+              // A local file id can be reassigned after restart. Never reuse
+              // an orphan from an incomplete page without a matching identity.
+              stage.dropMedia(msgId,fileId);
               checkCapacityBeforeDownload(attachment.file);
             File source=cloudDownload(fileId);
               Exception saveFailure=null;
@@ -629,6 +634,8 @@ public final class ExportEngine {
                   throw cleanup;
                 }
               }
+              // Only mark reusable after plaintext cache removal succeeds.
+              stage.recordMediaIdentity(msgId,fileId,uniqueId);
             }
             String target="media/"+msgId+"/"+fileId+attachmentExtension(attachment,msg);
             index.append(new JSONObject()
@@ -757,3 +764,4 @@ public final class ExportEngine {
     } finally {Arrays.fill(sessionSecret,(byte)0);}
   }
 }
+

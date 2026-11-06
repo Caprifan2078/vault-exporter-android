@@ -161,6 +161,29 @@ public final class TestHardenedExportEngine {
     catch(IOException ex){mediaFail=ex.getMessage().contains("503");}
     yes(mediaFail,"missing download accepted");
     ByteArrayOutputStream recovered=new ByteArrayOutputStream();send(mediaRoot,new TdGateway(shortIds,mediaRoot),chat,recovered);checkArchive(recovered.toByteArray(),shortIds,8);
+    // Same local file id can refer to a different remote file after a restart.
+    // Interrupt within one page after voice was staged and before it commits.
+    for(int scenario=0;scenario<3;scenario++) {
+      long[] sample=ids(20);
+      File retryRoot=Files.createTempDirectory("orphan-media-identity-").toFile();
+      TdGateway first=new TdGateway(sample,retryRoot);first.setPageSize(100);first.failDownloadFor(503);
+      if(scenario==2)first.omitVoiceIdentity();
+      boolean interrupted=false;
+      try{send(retryRoot,first,chat,new ByteArrayOutputStream());}catch(IOException expected){interrupted=true;}
+      yes(interrupted,"synthetic interruption missing");
+      TdGateway next=new TdGateway(sample,retryRoot);next.setPageSize(100);
+      if(scenario==0)next.changeVoice();
+      if(scenario==1)next.failDownloadFor(501); // unchanged identity must reuse cache
+      if(scenario==2){next.omitVoiceIdentity();next.changeVoice();}
+      ByteArrayOutputStream archive=new ByteArrayOutputStream();send(retryRoot,next,chat,archive);
+      ArchiveVerifier.verify(new ByteArrayInputStream(archive.toByteArray()),PASS);
+      Map<String,byte[]> entries=unpack(archive.toByteArray());
+      byte[] voice=null;
+      for(var entry:entries.entrySet())if(entry.getKey().startsWith("media/"+sample[3]+"/501."))voice=entry.getValue();
+      byte[] expected=scenario==1?TdGateway.contentFor(501):"OggS changed voice data".getBytes(StandardCharsets.UTF_8);
+      yes(Arrays.equals(voice,expected),"orphan media reused without matching persistent identity, scenario="+scenario);
+    }
+    System.out.println("PASS interrupted media: changed, unchanged and missing persistent identities");
     // Crash in final archive output must not invalidate committed encrypted staging.
     File finalRoot=Files.createTempDirectory("hardened-engine-finalize-").toFile();
     final long[] created={0};boolean failedFinalize=false;
@@ -288,3 +311,4 @@ public final class TestHardenedExportEngine {
     System.out.printf(Locale.ROOT,"PASS Hardened ExportEngine+TVS2+strict verifier: 250 and 2000 messages, eight media kinds, three outages, media retry, interrupted finalization, SHA-256, wrong password; bytes=%d%n",large.size());
   }
 }
+

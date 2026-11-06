@@ -11,6 +11,9 @@ public final class TdGateway {
   }
   final long[] ids;final File root;
   int calls,failHistoryAt,failFileId,failChatAt;
+  boolean changedVoice,missingVoiceIdentity;
+  public void changeVoice(){changedVoice=true;}
+  public void omitVoiceIdentity(){missingVoiceIdentity=true;}
   int chatCalls,protectOnChatCall;
   int localFault;
   public void setLocalFault(int mode){localFault=mode;}
@@ -56,7 +59,7 @@ public final class TdGateway {
       default->throw new IllegalArgumentException("No such media "+id);
     };
   }
-  private static JSONObject file(int id){return new JSONObject().put("id",id).put("remote",new JSONObject().put("unique_id","fake-"+id));}
+  private JSONObject file(int id){return new JSONObject().put("id",id).put("remote",new JSONObject().put("unique_id",id==501&&missingVoiceIdentity?"":"fake-"+id+(id==501&&changedVoice?"-changed":"")));}
   private File privateCacheFile(int id){return new File(root,"tdlib/files/file-"+id+".bin");}
   private JSONObject content(int position,long id){
     switch(position){
@@ -143,7 +146,8 @@ public final class TdGateway {
         if(largeVideo && id==503){
           byte[] chunk=new byte[65536];Arrays.fill(chunk,(byte)0x6a);
           for(int i=0;i<48*1024*1024/chunk.length;i++)out.write(chunk);
-        }else out.write(contentFor(id));
+        }else if(changedVoice && id==501)out.write("OggS changed voice data".getBytes(StandardCharsets.UTF_8));
+        else out.write(contentFor(id));
       }
       return new JSONObject().put("id",id).put("size",f.length())
         .put("local",new JSONObject().put("is_downloading_completed",true)
@@ -167,3 +171,4 @@ public final class TdGateway {
     throw new IOException("Unsupported fake call: "+type);
   }
 }
+
