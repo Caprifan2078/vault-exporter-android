@@ -7,6 +7,7 @@ r=Path(__file__).resolve().parent.parent
 g=(r/'app/build.gradle').read_text()
 a=(r/'app/src/main/java/org/vault/exporter/MainActivity.java').read_text()
 for value in (
+    "ndkVersion '25.2.9519653'",
     'qaRuntime {', "applicationIdSuffix '.runtimeqa'",
     "buildConfigField 'boolean', 'TELEGRAM_TEST_DC', 'false'",
     "buildConfigField 'boolean', 'QA_PRODUCTION', 'true'",
