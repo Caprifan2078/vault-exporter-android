@@ -2,12 +2,15 @@ package org.json;
 import java.util.*;
 /** Test-only JSON subset. NOT shipped in Android. Independent archive verifier parses JSON itself. */
 public class JSONObject {
+  public static final Object NULL=new Object();
   final LinkedHashMap<String,Object> map;
   public JSONObject(){map=new LinkedHashMap<>();}
   JSONObject(Map<String,Object> map){this.map=new LinkedHashMap<>(map);}
   public JSONObject(String text){this();Parser p=new Parser(text);Object obj=p.parse();if(!(obj instanceof JSONObject j)||p.pos!=text.length())throw new JSONException("Invalid JSON object");map.putAll(j.map);}
   public JSONObject put(String key,Object value){map.put(key,value);return this;}
   public boolean has(String key){return map.containsKey(key);}
+  public Object opt(String key){return map.get(key);}
+  public JSONObject remove(String key){map.remove(key);return this;}
   public JSONObject optJSONObject(String key){Object v=map.get(key);return v instanceof JSONObject?(JSONObject)v:null;}
   public JSONArray optJSONArray(String key){Object v=map.get(key);return v instanceof JSONArray?(JSONArray)v:null;}
   public String optString(String key){return optString(key,"");}
@@ -17,6 +20,7 @@ public class JSONObject {
   public int optInt(String key,int fallback){Object v=map.get(key);return v instanceof Number?((Number)v).intValue():fallback;}
   public long optLong(String key){return optLong(key,0);}
   public long optLong(String key,long fallback){Object v=map.get(key);return v instanceof Number?((Number)v).longValue():fallback;}
+  public double optDouble(String key,double fallback){Object v=map.get(key);return v instanceof Number?((Number)v).doubleValue():fallback;}
   public long getLong(String key){if(!map.containsKey(key)||!(map.get(key) instanceof Number))throw new JSONException("Missing number: "+key);return ((Number)map.get(key)).longValue();}
   public int getInt(String key){return Math.toIntExact(getLong(key));}
   public String getString(String key){if(!map.containsKey(key))throw new JSONException("Missing: "+key);return String.valueOf(map.get(key));}

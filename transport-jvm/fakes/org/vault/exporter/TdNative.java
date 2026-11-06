@@ -8,6 +8,10 @@ public final class TdNative {
   static final BlockingQueue<String> outbound=new LinkedBlockingQueue<>();
   static final AtomicInteger nextClient=new AtomicInteger(91);
   static final AtomicBoolean gateNextHistory=new AtomicBoolean();
+  static final AtomicBoolean receiverOwned=new AtomicBoolean();
+  static volatile boolean autoClose=true;
+  static boolean acquireReceiver(){return receiverOwned.compareAndSet(false,true);}
+  static void releaseReceiver(){receiverOwned.set(false);}
   static volatile CountDownLatch historyEntered=new CountDownLatch(0);
   static volatile CountDownLatch historyRelease=new CountDownLatch(0);
   static void holdNextHistorySend(){
@@ -28,6 +32,11 @@ public final class TdNative {
       }
     }
     outbound.add(request);
+    if(autoClose && request.contains("\"@type\":\"close\""))closed(client);
+  }
+  static void closed(long client){
+    inbound.add(new JSONObject().put("@client_id",client).put("@type","updateAuthorizationState")
+      .put("authorization_state",new JSONObject().put("@type","authorizationStateClosed")).toString());
   }
   static String receive(double seconds){
     try{return inbound.poll(Math.max(1,(long)(seconds*1000)), TimeUnit.MILLISECONDS);}
@@ -35,6 +44,9 @@ public final class TdNative {
   }
   static void reply(long client,String id,String type){
     inbound.add(new JSONObject().put("@client_id",client).put("@extra",id).put("@type",type).toString());
+  }
+  static void error(long client,String id,int code){
+    inbound.add(new JSONObject().put("@client_id",client).put("@extra",id).put("@type","error").put("code",code).put("message","SYNTHETIC").toString());
   }
   static void flush(){inbound.clear();outbound.clear();}
 }

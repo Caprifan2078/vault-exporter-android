@@ -5,8 +5,25 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 /** Fake transport, no Telegram connection. Mimics short pages with cursor overlap. */
 public final class TdGateway {
+  public static final class TelegramError extends IllegalStateException {
+    public final int code;
+    public TelegramError(int code){super("Synthetic Telegram error "+code);this.code=code;}
+  }
   final long[] ids;final File root;
   int calls,failHistoryAt,failFileId,failChatAt;
+  boolean changedVoice,missingVoiceIdentity;
+  int downloadIdentityFault;
+  public void setDownloadIdentityFault(int mode){downloadIdentityFault=mode;}
+  public void changeVoice(){changedVoice=true;}
+  public void omitVoiceIdentity(){missingVoiceIdentity=true;}
+  int chatCalls,protectOnChatCall;
+  int localFault;
+  public void setLocalFault(int mode){localFault=mode;}
+  public void protectOnChatCall(int n){protectOnChatCall=n;}
+  boolean distinctSenders;
+  public void useDistinctSenders(){distinctSenders=true;}
+  int fakePageSize=7;
+  public void setPageSize(int value){if(value<1||value>100)throw new IllegalArgumentException();fakePageSize=value;}
   boolean inconsistentEmpty,protectedChat,secretChat,largeVideo;
   int misroutedPosition=-1;
   boolean misroutedChatMetadata,misrouteStalledProbe;
@@ -14,6 +31,17 @@ public final class TdGateway {
   public void misrouteChatMetadata(){misroutedChatMetadata=true;}
   public void misrouteStalledProbe(){misrouteStalledProbe=true;}
   final Map<Integer,JSONObject> overrides=new HashMap<>();
+  String expiringField; Object expiringValue;
+  boolean omitMessageCanBeSaved,omitChatProtection;
+  String omittedTimer;
+  public void omitMessageTimer(String field){omittedTimer=field;}
+  String testChatType="chatTypePrivate";
+  public void setChatType(String type){testChatType=type;}
+  int participantFailure;
+  public void failParticipant(int mode){participantFailure=mode;}
+  public void setExpiringMessage(String field,Object value){expiringField=field;expiringValue=value;}
+  public void omitMessageCanBeSaved(){omitMessageCanBeSaved=true;}
+  public void omitChatProtection(){omitChatProtection=true;}
   public void contentOverride(int position, JSONObject replacement){overrides.put(position,replacement);}
   public TdGateway(long[] ids,File root){this.ids=ids;this.root=root;}
   public void failOnHistoryCall(int n){failHistoryAt=n;}
@@ -33,7 +61,7 @@ public final class TdGateway {
       default->throw new IllegalArgumentException("No such media "+id);
     };
   }
-  private static JSONObject file(int id){return new JSONObject().put("id",id);}
+  private JSONObject file(int id){return new JSONObject().put("id",id).put("remote",new JSONObject().put("unique_id",id==501&&missingVoiceIdentity?"":"fake-"+id+(id==501&&changedVoice?"-changed":"")));}
   private File privateCacheFile(int id){return new File(root,"tdlib/files/file-"+id+".bin");}
   private JSONObject content(int position,long id){
     switch(position){
@@ -51,10 +79,43 @@ public final class TdGateway {
   public JSONObject await(JSONObject req,long timeout)throws Exception {
     String type=req.optString("@type");
     if(type.equals("getChat")){
-      if(protectedChat)return new JSONObject().put("id",req.getLong("chat_id")).put("has_protected_content",true);
-      return new JSONObject().put("id",misroutedChatMetadata?9999L:req.getLong("chat_id")).put("title","Synthetic").put("has_protected_content",false).put("type",new JSONObject().put("@type",secretChat?"chatTypeSecret":"chatTypePrivate"));
+      chatCalls++;
+      if(protectedChat || (protectOnChatCall>0 && chatCalls>=protectOnChatCall))return new JSONObject().put("id",req.getLong("chat_id")).put("has_protected_content",true);
+      JSONObject chat=new JSONObject().put("id",misroutedChatMetadata?9999L:req.getLong("chat_id")).put("title","Synthetic").put("type",new JSONObject().put("@type",secretChat?"chatTypeSecret":testChatType));
+      if(!omitChatProtection)chat.put("has_protected_content",false);
+      return chat;
     }
-    if(type.equals("getUser"))return new JSONObject().put("first_name","Test");
+    if(type.equals("getUser")){
+      if(participantFailure==1)throw new TelegramRateLimit.Delay(121);
+      if(participantFailure==2)throw new InterruptedException("synthetic cancellation");
+      if(participantFailure==3)throw new TelegramError(429);
+      if(participantFailure==4)throw new TelegramError(404);
+      if(participantFailure==5)throw new IOException("synthetic network outage");
+      if(participantFailure==6)throw new java.util.concurrent.TimeoutException("synthetic timeout");
+      return new JSONObject().put("first_name","Test");
+    }
+    if(type.equals("getMessageLocally")){
+      long target=req.getLong("message_id");int lo=0,hi=ids.length-1,index=-1;
+      while(lo<=hi){int mid=(lo+hi)>>>1;if(ids[mid]==target){index=mid;break;}if(ids[mid]>target)lo=mid+1;else hi=mid-1;}
+      if(index<0 || (localFault==2 && index==1))throw new TelegramError(404);
+      JSONObject msg=new JSONObject().put("id",target)
+        .put("chat_id",localFault==3 && index==1?9999L:req.getLong("chat_id"))
+        .put("can_be_saved",!(localFault==1 && index==1)).put("edit_date",0)
+        .put("self_destruct_in",0).put("auto_delete_in",0)
+        .put("content",overrides.getOrDefault(index,content(index,target)));
+      if(localFault==4 && index==1)msg.put("edit_date",123);
+      if(localFault==5 && index==1)msg.put("edit_date","invalid");
+      if(localFault==6 && index==1)msg.remove("edit_date");
+      if(localFault==7 && index==1)msg.put("content",new JSONObject().put("@type","messageText").put("text",new JSONObject().put("text","changed")));
+      if(localFault==8 && index==1)msg.put("content",new JSONObject().put("@type","messageContact"));
+      if(localFault==9 && index==3)msg.optJSONObject("content").optJSONObject("voice_note").optJSONObject("voice").put("remote",new JSONObject().put("unique_id","different-media"));
+      if(localFault==10 && index==1)msg.optJSONObject("content").optJSONObject("text")
+        .put("entities",new JSONArray().put(new JSONObject().put("offset",0).put("length",2).put("type",new JSONObject().put("@type","textEntityTypeBold"))));
+      if(localFault==11 && index==3)msg.optJSONObject("content").put("caption",new JSONObject().put("text","changed"));
+      if(localFault==12 && index==3)msg.optJSONObject("content").optJSONObject("voice_note").optJSONObject("voice")
+        .put("local",new JSONObject().put("path","/synthetic/cache").put("is_downloading_completed",true));
+      return msg;
+    }
     if(type.equals("getChatHistory")){
       calls++;if(calls==failHistoryAt)throw new IOException("SIMULATED_NETWORK_DROP");
       long from=req.optLong("from_message_id");int limit=req.optInt("limit",100);
@@ -62,16 +123,22 @@ public final class TdGateway {
       if(from>0)while(start<ids.length&&ids[start]>from)start++;
       if(start>=ids.length)return new JSONObject().put("messages",arr);
       if(misrouteStalledProbe && from==ids[6]){
-        arr.put(new JSONObject().put("id",ids[6]).put("chat_id",req.getLong("chat_id"))
+        arr.put(new JSONObject().put("id",ids[6]).put("chat_id",req.getLong("chat_id")).put("can_be_saved",true).put("self_destruct_in",0).put("auto_delete_in",0)
           .put("content",content(6,ids[6])));
         return new JSONObject().put("messages",arr);
       }
-      for(int i=start;i<ids.length&&i<start+Math.min(7,limit);i++)
-        arr.put(new JSONObject().put("id",ids[i])
+      for(int i=start;i<ids.length&&i<start+Math.min(fakePageSize,limit);i++) {
+        JSONObject message=new JSONObject().put("id",ids[i])
           .put("chat_id", (i==misroutedPosition ||
               (misrouteStalledProbe && from==ids[6]-1 && i==7))?9999L:req.getLong("chat_id"))
-          .put("sender_id",new JSONObject().put("@type","messageSenderUser").put("user_id",55))
-          .put("content",overrides.getOrDefault(i,content(i,ids[i]))));
+          .put("sender_id",new JSONObject().put("@type","messageSenderUser").put("user_id",distinctSenders?1000000L+i:55))
+          .put("can_be_saved",true).put("edit_date",0).put("self_destruct_in",0).put("auto_delete_in",0)
+          .put("content",overrides.getOrDefault(i,content(i,ids[i])));
+        if(i==1 && omittedTimer!=null)message.remove(omittedTimer);
+        if(i==1 && omitMessageCanBeSaved)message.remove("can_be_saved");
+        if(i==1 && expiringField!=null) message.put(expiringField,expiringValue);
+        arr.put(message);
+      }
       return new JSONObject().put("messages",arr);
     }
     if(type.equals("downloadFile")){
@@ -81,11 +148,18 @@ public final class TdGateway {
         if(largeVideo && id==503){
           byte[] chunk=new byte[65536];Arrays.fill(chunk,(byte)0x6a);
           for(int i=0;i<48*1024*1024/chunk.length;i++)out.write(chunk);
-        }else out.write(contentFor(id));
+        }else if(changedVoice && id==501)out.write("OggS changed voice data".getBytes(StandardCharsets.UTF_8));
+        else out.write(contentFor(id));
       }
-      return new JSONObject().put("id",id).put("size",f.length())
+      JSONObject result=new JSONObject().put("id",id).put("size",f.length())
         .put("local",new JSONObject().put("is_downloading_completed",true)
         .put("is_downloading_active",false).put("path",f.getCanonicalPath()));
+      if(id!=501 || downloadIdentityFault!=2) {
+        JSONObject remote=file(id).optJSONObject("remote");
+        if(id==501 && downloadIdentityFault==1)remote.put("unique_id","different-file");
+        result.put("remote",remote);
+      }
+      return result;
     }
     if(type.equals("cancelDownloadFile"))return new JSONObject().put("@type","ok");
     if(type.equals("deleteFile")){
@@ -105,3 +179,4 @@ public final class TdGateway {
     throw new IOException("Unsupported fake call: "+type);
   }
 }
+

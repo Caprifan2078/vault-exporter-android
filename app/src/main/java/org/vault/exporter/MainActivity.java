@@ -538,8 +538,11 @@ public final class MainActivity extends Activity {
     try {
       worker.execute(() -> {
         long clientId = 0;
+        boolean receiverOwned = false;
         String result = "TDLIB_OFFLINE_PROBE_FAIL: нет корректного ответа TDLib.";
         try {
+          if (!TdNative.acquireReceiver()) throw new IllegalStateException("TDLib занят");
+          receiverOwned = true;
           clientId = TdNative.createClient();
           if (clientId <= 0) throw new IllegalStateException("TDLib client creation returned zero");
           // getAuthorizationState is local before TDLib parameters; no account or network.
@@ -568,6 +571,29 @@ public final class MainActivity extends Activity {
           if (clientId > 0) {
             try { TdNative.send(clientId, "{\"@type\":\"close\"}"); }
             catch (Throwable ignored) { /* diagnostic cleanup only */ }
+          }
+          boolean closeConfirmed = clientId <= 0;
+          if (clientId > 0) {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+            try {
+              while (System.nanoTime() < deadline) {
+                String wire = TdNative.receive(0.5);
+                if (wire == null) continue;
+                JSONObject response = new JSONObject(wire);
+                JSONObject auth = response.optJSONObject("authorization_state");
+                if (response.optLong("@client_id", 0) == clientId &&
+                    "updateAuthorizationState".equals(response.optString("@type")) &&
+                    auth != null && "authorizationStateClosed".equals(auth.optString("@type"))) {
+                  closeConfirmed = true;
+                  break;
+                }
+              }
+            } catch (Throwable ignored) { /* Keep reservation if closure is uncertain. */ }
+          }
+          if (receiverOwned && closeConfirmed) TdNative.releaseReceiver();
+          if (!closeConfirmed) {
+            nativeProbePassed = false;
+            result = "TDLIB_OFFLINE_PROBE_FAIL: закрытие TDLib не подтверждено. Перезапусти приложение.";
           }
           nativeProbeRunning.set(false);
           final String message = result;
@@ -804,6 +830,7 @@ public final class MainActivity extends Activity {
     button("1. Выбрать переписку",this::chooseChat);
     button("2. Скачать зашифрованный архив",this::requestPassphrase);
     message("Приложение загружает доступные фото, видео и документы через Telegram, в том числе отсутствующие в кэше. Пароль защищает сохранённый архив.");
+    message("Формат .tva пока не открывается в Telegram Archive Viewer. Совместимость ещё не реализована.");
     button("Завершить сеанс экспортёра",this::confirmLogout);
     button("Если загрузка не удалась: удалить её прогресс",this::confirmResetProgress);
   }
@@ -813,31 +840,34 @@ public final class MainActivity extends Activity {
       try {
         ArrayList<Long> keys=new ArrayList<>(); ArrayList<String> titles=new ArrayList<>();
         HashSet<Long> encountered=new HashSet<>();
+        boolean possiblyIncomplete=false;
         for(String listName:new String[]{"chatListMain","chatListArchive"}) {
           JSONObject chatList=TdGateway.cmd(listName);
+          boolean allLoaded=false;
           for(int batch=0;batch<4;batch++) {
             try { td.await(TdGateway.cmd("loadChats").put("chat_list",chatList).put("limit",100),60); }
-            catch(Exception e) {break;} // TDLib returns 404 when no more chats are available.
+            catch(TdGateway.TelegramError e) {if(e.code==404){allLoaded=true;break;}throw e;}
           }
           JSONArray ids=td.await(TdGateway.cmd("getChats").put("chat_list",chatList).put("limit",500),45)
             .optJSONArray("chat_ids");
-          if(ids==null)continue;
+          if(ids==null)throw new IOException("Telegram вернул некорректный список чатов");
+          if(!allLoaded || ids.length()>=500)possiblyIncomplete=true;
           for(int i=0;i<ids.length();i++) {
             long id=ids.getLong(i);if(!encountered.add(id))continue;
             JSONObject chat=td.await(TdGateway.cmd("getChat").put("chat_id",id),30);
-            if(chat.optBoolean("has_protected_content",false))continue;
-            JSONObject type=chat.optJSONObject("type");
-            if(type!=null && "chatTypeSecret".equals(type.optString("@type")))continue;
+            if(!ExportEngine.isExportableChat(chat))continue;
             keys.add(id);
             titles.add(("chatListArchive".equals(listName)?"[Архив] ":"")+chat.optString("title","Без названия"));
           }
         }
+        final boolean listMayBeIncomplete=possiblyIncomplete;
         runOnUiThread(() -> {
-          if(keys.isEmpty()) { showStatus("Подходящих облачных чатов нет."); return; }
+          if(keys.isEmpty()) { showStatus(listMayBeIncomplete ? "Список чатов загружен не полностью. Попробуй ещё раз." : "Подходящих облачных чатов нет."); return; }
           EditText search=new EditText(this);
           search.setSingleLine(true);
           search.setHint("Часть названия чата (можно оставить пустым)");
           new AlertDialog.Builder(this).setTitle("Найти переписку")
+            .setMessage(listMayBeIncomplete ? "Список может быть неполным. Поиск проверяет загруженные чаты и показывает первые 200 совпадений." : "В результатах показываются первые 200 совпадений.")
             .setView(search).setNegativeButton("Отмена",null)
             .setPositiveButton("Показать чаты",(dialog,unused)->{
               String query=search.getText().toString().toLowerCase(java.util.Locale.ROOT).trim();
@@ -848,7 +878,7 @@ public final class MainActivity extends Activity {
                   found.add(n);names.add(titles.get(n));
                 }
               }
-              if(found.isEmpty()){showStatus("Такой чат не найден. Повтори поиск.");return;}
+              if(found.isEmpty()){showStatus(listMayBeIncomplete ? "Чат не найден среди загруженных. Список может быть неполным." : "Такой чат не найден. Повтори поиск.");return;}
               new AlertDialog.Builder(this).setTitle("Выбрать чат")
                 .setItems(names.toArray(new String[0]),(picked,which)->{
                   int original=found.get(which);
@@ -1008,7 +1038,8 @@ public final class MainActivity extends Activity {
           message("Архив проверен! Сообщений: "+summary.messages+", медиафайлов: "+summary.media+
             ", пропущенных файлов: "+summary.missing+". ZIP-записей: "+entries);
           if(summary.missing!=0 || !summary.historyFinished)
-            message("ВНИМАНИЕ: архив неполный. Читалка сможет показать сохранённое, но проверь пропущенные файлы.");
+            message("ВНИМАНИЕ: архив неполный. Проверь пропущенные файлы.");
+          message("Формат .tva пока не открывается в Telegram Archive Viewer. Совместимость ещё не реализована.");
           message("Пароль сохранён только в твоей памяти: приложение не сможет его восстановить.");
           button("Завершить сеанс экспортёра",this::confirmLogout);
           button("Выбрать другой чат",()->{clearUi();showReady();});
@@ -1020,11 +1051,7 @@ public final class MainActivity extends Activity {
         try {removed=getContentResolver().delete(destination,null,null)>0;}
         catch(Exception ignored) { /* Display cleanup warning, never claim success. */ }
         final boolean partialRemoved=removed;
-        final String explanation=unsafeCache
-          ? "ВНИМАНИЕ: не удалось подтвердить удаление незашифрованного временного файла. Экспорт остановлен ради приватности. Не повторяй его до очистки данных Vault Exporter в настройках Android. Это удалит сеанс и незавершённый прогресс."
-          : e instanceof ExportEngine.StorageCapacityException
-            ? ((ExportEngine.StorageCapacityException)e).userMessage()
-            : "Экспорт прерван. Зашифрованный прогресс сохранён локально, можно попробовать продолжить позже.";
+        final String explanation=ExportFailureMessages.describe(e);
         showStatus(explanation+(partialRemoved?"":" Также проверь папку сохранения и удали неполный файл вручную."));
         runOnUiThread(()-> {
           exporting=false;clearUi();
@@ -1107,3 +1134,4 @@ public final class MainActivity extends Activity {
     super.onDestroy();
   }
 }
+

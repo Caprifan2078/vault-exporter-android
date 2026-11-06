@@ -58,6 +58,94 @@ public final class TestHardenedExportEngine {
   }
   public static void main(String[] args)throws Exception{
     long chat=4321;long[] shortIds=ids(250);File root=Files.createTempDirectory("hardened-engine-short-").toFile();
+    for(String field:new String[]{"self_destruct_type","self_destruct_in","auto_delete_in"}) {
+      File expiryRoot=Files.createTempDirectory("expiring-message-").toFile();
+      TdGateway expiry=new TdGateway(shortIds,expiryRoot);
+      expiry.setExpiringMessage(field,field.equals("self_destruct_type")
+          ?new JSONObject().put("@type","messageSelfDestructTypeImmediately"):0.5);
+      ByteArrayOutputStream output=new ByteArrayOutputStream();boolean refused=false;
+      try{send(expiryRoot,expiry,chat,output);}catch(SecurityException expected){refused=true;}
+      yes(refused && output.size()==0,"Expiring message exported: "+field);
+    }
+    // Simulate an older app version having checkpointed an expiring message.
+    File legacyRoot=Files.createTempDirectory("legacy-expiring-stage-").toFile();
+    byte[] legacySecret=new byte[32];Arrays.fill(legacySecret,(byte)0x5c);
+    try(ResumeStore legacy=new ResumeStore(new File(legacyRoot,"export-progress"),chat,legacySecret)) {
+      JSONObject message=new JSONObject().put("id",123).put("chat_id",chat).put("can_be_saved",true)
+        .put("self_destruct_in",0).put("auto_delete_in",30).put("content",new JSONObject().put("@type","messageText"));
+      legacy.putPage(1,(message.toString()+"\n").getBytes(StandardCharsets.UTF_8),new byte[0]);
+      legacy.checkpoint(new ResumeStore.State(chat,123,1,1,0,true));
+    }
+    ByteArrayOutputStream legacyOutput=new ByteArrayOutputStream();boolean legacyRefused=false;
+    try{send(legacyRoot,new TdGateway(shortIds,legacyRoot),chat,legacyOutput);}
+    catch(SecurityException expected){legacyRefused=true;}
+    yes(legacyRefused && legacyOutput.size()==0,"Legacy expiring checkpoint was exported");
+    for(int mode=0;mode<9;mode++) {
+      File restrictionRoot=Files.createTempDirectory("invalid-restriction-").toFile();
+      TdGateway gateway=new TdGateway(shortIds,restrictionRoot);
+      if(mode==0)gateway.omitMessageCanBeSaved();
+      if(mode==1)gateway.setExpiringMessage("can_be_saved",false);
+      if(mode==2)gateway.setExpiringMessage("can_be_saved","true");
+      if(mode==3)gateway.omitChatProtection();
+      if(mode==4)gateway.setExpiringMessage("auto_delete_in","bad");
+      if(mode==5)gateway.setExpiringMessage("self_destruct_type","bad");
+      if(mode==6)gateway.setExpiringMessage("auto_delete_in",null);
+      if(mode==7)gateway.omitMessageTimer("auto_delete_in");
+      if(mode==8)gateway.omitMessageTimer("self_destruct_in");
+      ByteArrayOutputStream output=new ByteArrayOutputStream();boolean denied=false;
+      try{send(restrictionRoot,gateway,chat,output);}catch(SecurityException expected){denied=true;}
+      yes(denied && output.size()==0,"Invalid restriction accepted, case "+mode);
+    }
+    for(String badType:new String[]{"chatTypeSecret","unknownFutureChatType",""}) {
+      File badChatRoot=Files.createTempDirectory("unsupported-chat-type-").toFile();
+      TdGateway badChat=new TdGateway(shortIds,badChatRoot);badChat.setChatType(badType);
+      ByteArrayOutputStream out=new ByteArrayOutputStream();boolean refused=false;
+      try{send(badChatRoot,badChat,chat,out);}catch(SecurityException expected){refused=true;}
+      yes(refused && out.size()==0,"Unknown or secret chat accepted: "+badType);
+    }
+    for(int mode:new int[]{1,2,3,5,6}) {
+      File limitRoot=Files.createTempDirectory("participant-stop-").toFile();
+      TdGateway gateway=new TdGateway(ids(3),limitRoot);gateway.failParticipant(mode);
+      boolean stopped=false;
+      try{send(limitRoot,gateway,chat,new ByteArrayOutputStream());}
+      catch(IOException expected){stopped=(mode==1 && expected.getCause() instanceof TelegramRateLimit.Delay) || mode==5;}
+      catch(InterruptedException expected){stopped=mode==2 && Thread.currentThread().isInterrupted();Thread.interrupted();}
+      catch(TdGateway.TelegramError expected){stopped=mode==3 && expected.code==429;}
+      catch(java.util.concurrent.TimeoutException expected){stopped=mode==6;}
+      yes(stopped,"Participant lookup swallowed rate limit or cancellation: "+mode);
+    }
+    File missingUserRoot=Files.createTempDirectory("missing-user-").toFile();
+    TdGateway missingUser=new TdGateway(ids(3),missingUserRoot);missingUser.failParticipant(4);
+    ByteArrayOutputStream anonymous=new ByteArrayOutputStream();send(missingUserRoot,missingUser,chat,anonymous);
+    checkArchive(anonymous.toByteArray(),ids(3),0);
+    // A chat can become protected while downloading or immediately before packing.
+    for(int protectAt:new int[]{2,3}) {
+      File protectRoot=Files.createTempDirectory("chat-protection-changed-").toFile();
+      TdGateway changing=new TdGateway(ids(3),protectRoot);changing.protectOnChatCall(protectAt);
+      ByteArrayOutputStream out=new ByteArrayOutputStream();boolean stopped=false;
+      try{send(protectRoot,changing,chat,out);}catch(SecurityException expected){stopped=true;}
+      yes(stopped && out.size()==0,"Changed chat protection was ignored at check "+protectAt);
+      ByteArrayOutputStream resumed=new ByteArrayOutputStream();
+      send(protectRoot,new TdGateway(ids(3),protectRoot),chat,resumed);
+      checkArchive(resumed.toByteArray(),ids(3),0);
+    }
+    for(int mode=1;mode<=11;mode++) {
+      File localRoot=Files.createTempDirectory("cached-message-change-").toFile();
+      long[] sample=ids(mode==9 || mode==11?4:3);
+      TdGateway changed=new TdGateway(sample,localRoot);changed.setLocalFault(mode);
+      ByteArrayOutputStream out=new ByteArrayOutputStream();boolean stopped=false;
+      try{send(localRoot,changed,chat,out);}
+      catch(SecurityException | IOException expected){stopped=true;}
+      yes(stopped && out.size()==0,"Unsafe cached-message state accepted: "+mode);
+      ByteArrayOutputStream recoveredLocal=new ByteArrayOutputStream();
+      send(localRoot,new TdGateway(sample,localRoot),chat,recoveredLocal);
+      checkArchive(recoveredLocal.toByteArray(),sample,(mode==9 || mode==11)?1:0);
+    }
+    File harmlessRoot=Files.createTempDirectory("cache-state-changed-").toFile();
+    TdGateway harmless=new TdGateway(ids(4),harmlessRoot);harmless.setLocalFault(12);
+    ByteArrayOutputStream harmlessArchive=new ByteArrayOutputStream();
+    send(harmlessRoot,harmless,chat,harmlessArchive);
+    checkArchive(harmlessArchive.toByteArray(),ids(4),1);
     TdGateway fails=new TdGateway(shortIds,root);fails.failOnHistoryCall(9);boolean failed=false;
     try{send(root,fails,chat,new ByteArrayOutputStream());}
     catch(IOException ex){failed=ex.getMessage().contains("SIMULATED_NETWORK_DROP");}
@@ -73,6 +161,42 @@ public final class TestHardenedExportEngine {
     catch(IOException ex){mediaFail=ex.getMessage().contains("503");}
     yes(mediaFail,"missing download accepted");
     ByteArrayOutputStream recovered=new ByteArrayOutputStream();send(mediaRoot,new TdGateway(shortIds,mediaRoot),chat,recovered);checkArchive(recovered.toByteArray(),shortIds,8);
+    // Same local file id can refer to a different remote file after a restart.
+    // Interrupt within one page after voice was staged and before it commits.
+    for(int scenario=0;scenario<3;scenario++) {
+      long[] sample=ids(20);
+      File retryRoot=Files.createTempDirectory("orphan-media-identity-").toFile();
+      TdGateway first=new TdGateway(sample,retryRoot);first.setPageSize(100);first.failDownloadFor(503);
+      if(scenario==2)first.omitVoiceIdentity();
+      boolean interrupted=false;
+      try{send(retryRoot,first,chat,new ByteArrayOutputStream());}catch(IOException expected){interrupted=true;}
+      yes(interrupted,"synthetic interruption missing");
+      TdGateway next=new TdGateway(sample,retryRoot);next.setPageSize(100);
+      if(scenario==0)next.changeVoice();
+      if(scenario==1)next.failDownloadFor(501); // unchanged identity must reuse cache
+      if(scenario==2){next.omitVoiceIdentity();next.changeVoice();}
+      ByteArrayOutputStream archive=new ByteArrayOutputStream();send(retryRoot,next,chat,archive);
+      ArchiveVerifier.verify(new ByteArrayInputStream(archive.toByteArray()),PASS);
+      Map<String,byte[]> entries=unpack(archive.toByteArray());
+      byte[] voice=null;
+      for(var entry:entries.entrySet())if(entry.getKey().startsWith("media/"+sample[3]+"/501."))voice=entry.getValue();
+      byte[] expected=scenario==1?TdGateway.contentFor(501):"OggS changed voice data".getBytes(StandardCharsets.UTF_8);
+      yes(Arrays.equals(voice,expected),"orphan media reused without matching persistent identity, scenario="+scenario);
+    }
+    System.out.println("PASS interrupted media: changed, unchanged and missing persistent identities");
+    for(int fault:new int[]{1,2}) {
+      File mismatchRoot=Files.createTempDirectory("download-identity-fault-").toFile();
+      TdGateway mismatch=new TdGateway(ids(4),mismatchRoot);mismatch.setDownloadIdentityFault(fault);
+      ByteArrayOutputStream output=new ByteArrayOutputStream();boolean refused=false;
+      try{send(mismatchRoot,mismatch,chat,output);}
+      catch(SecurityException expected){refused=true;}
+      yes(refused && output.size()==0,"download with changed or missing identity accepted");
+      yes(!new File(mismatchRoot,"tdlib/files/file-501.bin").exists(),"failed download left plaintext behind");
+      ByteArrayOutputStream resumed=new ByteArrayOutputStream();
+      send(mismatchRoot,new TdGateway(ids(4),mismatchRoot),chat,resumed);
+      checkArchive(resumed.toByteArray(),ids(4),1);
+    }
+    System.out.println("PASS changed or missing downloaded media identity rejected, plaintext cleaned, retry succeeds");
     // Crash in final archive output must not invalidate committed encrypted staging.
     File finalRoot=Files.createTempDirectory("hardened-engine-finalize-").toFile();
     final long[] created={0};boolean failedFinalize=false;
@@ -200,3 +324,4 @@ public final class TestHardenedExportEngine {
     System.out.printf(Locale.ROOT,"PASS Hardened ExportEngine+TVS2+strict verifier: 250 and 2000 messages, eight media kinds, three outages, media retry, interrupted finalization, SHA-256, wrong password; bytes=%d%n",large.size());
   }
 }
+

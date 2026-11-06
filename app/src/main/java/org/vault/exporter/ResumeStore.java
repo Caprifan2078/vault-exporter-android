@@ -129,11 +129,37 @@ public final class ResumeStore implements Closeable {
   }
   /** Never resume with a media checkpoint whose plaintext cache cleanup failed. */
   public void dropMedia(long messageId,int fileId) throws IOException {
+    // Remove the identity first: a crash must never leave an old identity
+    // attached to newly written content.
+    File identity=path(mediaIdentityName(messageId,fileId));
+    if(identity.exists() && !identity.delete())
+      throw new IOException("Unable to discard media identity checkpoint");
     File saved=path(mediaName(messageId,fileId));
     if(saved.exists() && !saved.delete())
       throw new IOException("Unable to discard unsafe encrypted media checkpoint");
   }
   public boolean hasMedia(long messageId,int fileId) { return exists(mediaName(messageId,fileId)); }
+  /** Reuse only when the authenticated persistent remote identity is unchanged. */
+  public boolean hasMediaIdentity(long messageId,int fileId,String uniqueId) throws Exception {
+    if(uniqueId==null || uniqueId.isEmpty() || uniqueId.length()>512 || !hasMedia(messageId,fileId)) return false;
+    String name=mediaIdentityName(messageId,fileId);
+    if(!exists(name)) return false; // Includes checkpoints from older versions.
+    try(DataInputStream in=new DataInputStream(open(name))) {
+      String saved=in.readUTF();
+      if(in.read()!=-1) throw new IOException("Invalid media identity checkpoint");
+      return uniqueId.equals(saved);
+    }
+  }
+  public void recordMediaIdentity(long messageId,int fileId,String uniqueId) throws Exception {
+    if(uniqueId==null || uniqueId.isEmpty() || uniqueId.length()>512) return;
+    ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+    try(DataOutputStream data=new DataOutputStream(bytes)){data.writeUTF(uniqueId);}
+    put(mediaIdentityName(messageId,fileId),new ByteArrayInputStream(bytes.toByteArray()));
+  }
+  private String mediaIdentityName(long messageId,int fileId) {
+    mediaName(messageId,fileId); // validate both identifiers
+    return "media-identities/"+messageId+"-"+fileId+".enc";
+  }
   public Media mediaFingerprint(long messageId,int fileId) throws Exception { return fingerprint(mediaName(messageId,fileId)); }
   public InputStream openMedia(long messageId,int fileId) throws Exception { return open(mediaName(messageId,fileId)); }
   public InputStream openPage(int page) throws Exception { return open(String.format(Locale.ROOT,"pages/%06d.jsonl.enc",page)); }
@@ -219,3 +245,4 @@ public final class ResumeStore implements Closeable {
     JVM_LOCKS.remove(localLockKey);
   }
 }
+

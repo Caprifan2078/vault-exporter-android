@@ -27,6 +27,11 @@ public final class ExportEngine {
     public CachePrivacyException(String message) { super(message); }
     public CachePrivacyException(String message, Throwable cause) { super(message,cause); }
   }
+  /** Locally staged message cannot be safely matched to TDLib's cached state. */
+  public static final class CachedMessageStateException extends IOException {
+    public CachedMessageStateException(String message){super(message);}
+    public CachedMessageStateException(String message,Throwable cause){super(message,cause);}
+  }
   /** Stop BEFORE a huge cloud download consumes all app-private storage. */
   public static final class StorageCapacityException extends IOException {
     public final long requiredBytes,availableBytes;
@@ -242,7 +247,7 @@ public final class ExportEngine {
     }
   }
 
-  private File cloudDownload(int id) throws Exception {
+  private File cloudDownload(int id,String expectedRemoteId) throws Exception {
     Exception last=null;
     for(int attempt=1;attempt<=FILE_RETRIES;attempt++) {
       File observedSource=null;
@@ -254,6 +259,13 @@ public final class ExportEngine {
           observedSource=new File(local.optString("path")).getCanonicalFile();
         if(!result.has("id") || result.optInt("id",-1)!=id)
           throw new SecurityException("TDLib вернула неверный file_id для вложения "+id);
+        // A local file id may be reused while a download is in flight. The
+        // downloaded File must still identify the same persistent remote file.
+        if(expectedRemoteId!=null && !expectedRemoteId.isEmpty()) {
+          JSONObject remote=result.optJSONObject("remote");
+          if(remote==null || !expectedRemoteId.equals(remote.optString("unique_id","")))
+            throw new SecurityException("Идентификатор загруженного медиа изменился: "+id);
+        }
         if(local==null || !local.optBoolean("is_downloading_completed",false))
           throw new IOException("TDLib не завершила загрузку файла "+id);
         if(observedSource==null || !observedSource.isFile() ||
@@ -317,14 +329,42 @@ public final class ExportEngine {
       throw new IOException("Повторный идентификатор вложения: "+messageId);
     out.add(new Attachment(file,category,mime,name,role,ordinal));
   }
+  private static void checkMessageRestriction(JSONObject msg) {
+    long mid=msg.optLong("id");
+    JSONObject c=msg.optJSONObject("content");
+    if(!Boolean.TRUE.equals(msg.opt("can_be_saved")))
+      throw new SecurityException("Сохранение сообщения запрещено Telegram: "+mid);
+    // Destruction and auto-delete metadata belongs to the message, not only
+    // to its content. Do not preserve messages that Telegram will remove.
+    Object selfDestruct=msg.opt("self_destruct_type");
+    if(selfDestruct!=null && selfDestruct!=JSONObject.NULL)
+      throw new SecurityException("Нельзя экспортировать самоудаляющееся сообщение: "+mid);
+    for(String field:new String[]{"self_destruct_in","auto_delete_in"}) {
+      Object value=msg.opt(field);
+      {
+        if(!(value instanceof Number))throw new SecurityException("Отсутствует или некорректен таймер сообщения: "+mid);
+        double seconds=((Number)value).doubleValue();
+        if(Double.isNaN(seconds)||Double.isInfinite(seconds)||seconds!=0)
+          throw new SecurityException("Нельзя экспортировать самоудаляющееся сообщение: "+mid);
+      }
+    }
+    if(c!=null&&c.optBoolean("is_secret",false))
+      throw new SecurityException("Нельзя экспортировать самоисчезающее медиа: "+mid);
+  }
+  private static long validatedEditDate(JSONObject msg)throws IOException {
+    Object value=msg.opt("edit_date");
+    if(!(value instanceof Number))throw new CachedMessageStateException("Нет корректной даты изменения сообщения");
+    double date=((Number)value).doubleValue();
+    if(Double.isNaN(date) || Double.isInfinite(date) || date<0 ||
+        date>Integer.MAX_VALUE || date!=Math.floor(date))
+      throw new CachedMessageStateException("Недопустимая дата изменения сообщения");
+    return (long)date;
+  }
   private static List<Attachment> attachments(JSONObject msg)throws IOException {
+    checkMessageRestriction(msg);
     long mid=msg.optLong("id");
     JSONObject c=msg.optJSONObject("content");
     String kind=c==null?"":c.optString("@type","");
-    if(msg.has("can_be_saved")&&!msg.optBoolean("can_be_saved",true))
-      throw new SecurityException("Сохранение сообщения запрещено Telegram: "+mid);
-    if(c!=null&&c.optBoolean("is_secret",false))
-      throw new SecurityException("Нельзя экспортировать самоисчезающее медиа: "+mid);
     ArrayList<Attachment> result=new ArrayList<>();
     String category=type(msg);
     if(!"other".equals(category)){
@@ -414,6 +454,48 @@ public final class ExportEngine {
       throw new IOException("Тип сообщения "+kind+" ещё не проверен на медиа: "+mid);
     return result;
   }
+  private static String uniqueRemoteId(Attachment a) {
+    JSONObject remote=a.file.optJSONObject("remote");
+    return remote==null?"":remote.optString("unique_id","");
+  }
+  private static void compareFormatted(JSONObject first,JSONObject second)throws IOException {
+    if(first==null && second==null)return;
+    if(first==null || second==null || !(first.opt("text") instanceof String) ||
+        !(second.opt("text") instanceof String) ||
+        !first.optString("text").equals(second.optString("text")))
+      throw new CachedMessageStateException("Текст сохранённого сообщения изменился");
+    Object a=first.opt("entities"),b=second.opt("entities");
+    if(a==JSONObject.NULL)a=null;
+    if(b==JSONObject.NULL)b=null;
+    if((a!=null && !(a instanceof JSONArray)) || (b!=null && !(b instanceof JSONArray)) ||
+        !Objects.equals(a==null?null:a.toString(),b==null?null:b.toString()))
+      throw new CachedMessageStateException("Форматирование сохранённого сообщения изменилось");
+  }
+  /** Compare stable message content, ignoring mutable local file cache fields. */
+  private static void compareStoredContent(JSONObject snapshot,JSONObject current)throws IOException {
+    JSONObject before=snapshot.optJSONObject("content"),after=current.optJSONObject("content");
+    if(before==null || after==null)throw new CachedMessageStateException("Нет содержимого сообщения");
+    String kind=before.optString("@type","");
+    if(kind.isEmpty() || !kind.equals(after.optString("@type","")))
+      throw new CachedMessageStateException("Тип сохранённого сообщения изменился");
+    if("messageText".equals(kind)) {
+      if(before.optJSONObject("text")==null || after.optJSONObject("text")==null)
+        throw new CachedMessageStateException("Нет текста сохранённого сообщения");
+      compareFormatted(before.optJSONObject("text"),after.optJSONObject("text"));
+    }
+    compareFormatted(before.optJSONObject("caption"),after.optJSONObject("caption"));
+    List<Attachment> oldFiles=attachments(snapshot),newFiles=attachments(current);
+    if(oldFiles.size()!=newFiles.size())
+      throw new CachedMessageStateException("Вложения сохранённого сообщения изменились");
+    for(int i=0;i<oldFiles.size();i++){
+      Attachment a=oldFiles.get(i),b=newFiles.get(i);
+      if(a.ordinal!=b.ordinal || !a.role.equals(b.role) || !a.category.equals(b.category))
+        throw new CachedMessageStateException("Вложения сохранённого сообщения изменились");
+      String oldId=uniqueRemoteId(a),newId=uniqueRemoteId(b);
+      if(!oldId.isEmpty() && !newId.isEmpty() && !oldId.equals(newId))
+        throw new CachedMessageStateException("Медиа сохранённого сообщения изменилось");
+    }
+  }
   private static String attachmentExtension(Attachment a,JSONObject msg){
     if("photo".equals(a.category))return ".jpg";
     if("preview_video".equals(a.role)||"paid_video".equals(a.role)||
@@ -429,17 +511,37 @@ public final class ExportEngine {
     return extension(a.category,msg);
   }
   private static byte[] bytes(StringBuilder builder){return builder.toString().getBytes(StandardCharsets.UTF_8);}
-  public Summary export(long chatId,OutputStream output,char[] password) throws Exception {
+  /** Refuse unknown chat types: they may carry restrictions we do not support. */
+  public static boolean isExportableChat(JSONObject chat) {
+    if(chat==null || !Boolean.FALSE.equals(chat.opt("has_protected_content")))return false;
+    JSONObject type=chat.optJSONObject("type");
+    if(type==null)return false;
+    switch(type.optString("@type")) {
+      case "chatTypePrivate": case "chatTypeBasicGroup": case "chatTypeSupergroup": return true;
+      default: return false;
+    }
+  }
+  private JSONObject verifyChat(long chatId) throws Exception {
     JSONObject chat=safeRead(req("getChat","chat_id",chatId),30);
     if (!chat.has("id") || chat.optLong("id") != chatId)
       throw new IOException("TDLib вернула другой чат при проверке выбранной переписки");
-    if(chat.optBoolean("has_protected_content",false))throw new SecurityException("Сохранение содержимого этого чата ограничено");
-    if("chatTypeSecret".equals(object(chat,"type")==null?"":object(chat,"type").optString("@type")))
-      throw new SecurityException("Облачный API не экспортирует секретные чаты");
+    if(!isExportableChat(chat))throw new SecurityException("Чат защищён, секретный или его тип не подтверждён");
+    return chat;
+  }
+  public Summary export(long chatId,OutputStream output,char[] password) throws Exception {
+    JSONObject chat=verifyChat(chatId);
     byte[] sessionSecret=new SessionSecrets(app).getOrCreate();
     try(ResumeStore stage=new ResumeStore(new File(app.getFilesDir(),"export-progress"),chatId,sessionSecret)){
       Arrays.fill(sessionSecret,(byte)0);
       ResumeStore.State s=stage.state();
+      // Recheck checkpoints written by older versions before resuming or
+      // finalizing them; those versions did not inspect expiry metadata.
+      for(int page=1;page<=s.pages;page++) {
+        try(BufferedReader reader=new BufferedReader(new InputStreamReader(stage.openPage(page),StandardCharsets.UTF_8))) {
+          String row;
+          while((row=reader.readLine())!=null) if(!row.isEmpty()) checkMessageRestriction(new JSONObject(row));
+        }
+      }
       if(s.pages>0)progress.show("Продолжаем: уже сохранено сообщений: "+s.messages+", файлов: "+s.media);
       while(!s.historyFinished) {
         // TDLib requires the last received ID, not id-1 (message IDs can be sparse).
@@ -516,12 +618,17 @@ public final class ExportEngine {
           line.append(msg.toString()).append('\n');
           for(Attachment attachment:attached){
             int fileId=attachment.id();
+            JSONObject remote=attachment.file.optJSONObject("remote");
+            String uniqueId=remote==null?"":remote.optString("unique_id","");
             ResumeStore.Media saved;
-            if(stage.hasMedia(msgId,fileId)){
+            if(stage.hasMediaIdentity(msgId,fileId,uniqueId)){
               saved=stage.mediaFingerprint(msgId,fileId);
             }else{
+              // A local file id can be reassigned after restart. Never reuse
+              // an orphan from an incomplete page without a matching identity.
+              stage.dropMedia(msgId,fileId);
               checkCapacityBeforeDownload(attachment.file);
-            File source=cloudDownload(fileId);
+            File source=cloudDownload(fileId,uniqueId);
               Exception saveFailure=null;
               try{saved=stage.saveMedia(msgId,fileId,source);}
               catch(Exception e){saveFailure=e;throw e;}
@@ -534,6 +641,8 @@ public final class ExportEngine {
                   throw cleanup;
                 }
               }
+              // Only mark reusable after plaintext cache removal succeeds.
+              stage.recordMediaIdentity(msgId,fileId,uniqueId);
             }
             String target="media/"+msgId+"/"+fileId+attachmentExtension(attachment,msg);
             index.append(new JSONObject()
@@ -546,6 +655,9 @@ public final class ExportEngine {
             downloadedOnPage++;
           }
         }
+        // Protection may change while history/media are being downloaded.
+        // getChat is local for non-bot users in the pinned TDLib schema.
+        verifyChat(chatId);
         int next=s.pages+1;
         stage.putPage(next,bytes(line),bytes(index));
         s=new ResumeStore.State(chatId,oldest,next,s.messages+page.size(),s.media+downloadedOnPage,false);
@@ -553,6 +665,38 @@ public final class ExportEngine {
         stage.checkpoint(s);
         progress.show("Сохранено: "+s.messages+" сообщений · "+s.media+" медиа. Можно продолжить после перерыва.");
       }
+      // Recheck cached message state without making network requests. If TDLib
+      // cannot verify a message locally, stop without discarding the checkpoint.
+      progress.show("Проверяем сохранённые сообщения в локальной базе TDLib…");
+      for(int page=1;page<=s.pages;page++) {
+        try(BufferedReader reader=new BufferedReader(new InputStreamReader(stage.openPage(page),StandardCharsets.UTF_8))) {
+          String row;
+          while((row=reader.readLine())!=null) {
+            if(row.isEmpty())continue;
+            JSONObject snapshot=new JSONObject(row);
+            long id=snapshot.optLong("id");
+            if(id<=0 || snapshot.optLong("chat_id")!=chatId)
+              throw new CachedMessageStateException("Повреждён сохранённый идентификатор сообщения");
+            JSONObject current;
+            try { current=safeRead(req("getMessageLocally","chat_id",chatId).put("message_id",id),30); }
+            catch(TdGateway.TelegramError error) {
+              if(error.code==404)throw new CachedMessageStateException("Сообщение недоступно в локальной базе TDLib. Прогресс сохранён; проверка остановлена.",error);
+              throw error;
+            }
+            if(current.optLong("id")!=id || current.optLong("chat_id")!=chatId)
+              throw new CachedMessageStateException("TDLib вернула другое сообщение при проверке сохранённого прогресса");
+            checkMessageRestriction(current);
+            if(validatedEditDate(snapshot)!=validatedEditDate(current))
+              throw new CachedMessageStateException("Сообщение изменилось после сохранения прогресса. Экспорт остановлен.");
+            compareStoredContent(snapshot,current);
+          }
+        }
+        if(page%10==0 || page==s.pages)
+          progress.show("Проверено сохранённых страниц: "+page+"/"+s.pages);
+      }
+      // This reflects TDLib's locally known state; concurrent or unseen server
+      // changes cannot be ruled out without a live server-side snapshot.
+      chat=verifyChat(chatId);
       // No downloads required during finalization; partial final .tva may be recreated from staging.
       progress.show("Все доступные данные получены. Собираем защищённый архив…");
       int files=0;
@@ -601,14 +745,16 @@ public final class ExportEngine {
               .put("first_name",user.optString("first_name"))
               .put("last_name",user.optString("last_name"))
               .put("username",user.optString("username")));
-          } catch(Exception e) {participants.put(new JSONObject().put("kind","user").put("id",userId));}
+          } catch(InterruptedException e) {Thread.currentThread().interrupt();throw e;}
+            catch(TdGateway.TelegramError e) {if(e.code!=404)throw e;participants.put(new JSONObject().put("kind","user").put("id",userId));}
         }
         for(long senderChat:senderChats) {
           try {
             JSONObject identity=safeRead(req("getChat","chat_id",senderChat),30);
             participants.put(new JSONObject().put("kind","chat").put("id",senderChat)
               .put("title",identity.optString("title")));
-          } catch(Exception e) {participants.put(new JSONObject().put("kind","chat").put("id",senderChat));}
+          } catch(InterruptedException e) {Thread.currentThread().interrupt();throw e;}
+            catch(TdGateway.TelegramError e) {if(e.code!=404)throw e;participants.put(new JSONObject().put("kind","chat").put("id",senderChat));}
         }
         archive.writeBytes("participants.json",participants.toString().getBytes(StandardCharsets.UTF_8));
         JSONObject manifest=new JSONObject()
@@ -625,3 +771,4 @@ public final class ExportEngine {
     } finally {Arrays.fill(sessionSecret,(byte)0);}
   }
 }
+

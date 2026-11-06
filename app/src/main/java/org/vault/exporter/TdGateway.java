@@ -5,6 +5,13 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class TdGateway {
+  public static final class TelegramError extends IllegalStateException {
+    public final int code;
+    TelegramError(int code) {
+      super("Telegram отклонил запрос, код " + code + ". При повторной ошибке останови экспорт.");
+      this.code=code;
+    }
+  }
   public interface Listener { void onUpdate(JSONObject event); }
   private final long client;
   private final ConcurrentHashMap<String, CompletableFuture<JSONObject>> pending = new ConcurrentHashMap<>();
@@ -14,33 +21,63 @@ public final class TdGateway {
   private final Listener listener;
   private final Thread reader;
   private volatile boolean running = true;
+  private volatile boolean closing = false;
 
   public TdGateway(Listener callback) {
     this.listener = callback;
-    client = TdNative.createClient();
-    if (client == 0) throw new IllegalStateException("TDLib не включена в APK: нет официальной libtdjson.so");
-    reader = new Thread(() -> {
-      while (running) {
-        String response = TdNative.receive(0.5);
-        if (response == null) continue;
+    // The TDLib C API has one global receive queue; multiple reader threads
+    // race and can consume another client's responses. Fail closed instead.
+    if (!TdNative.acquireReceiver())
+      throw new IllegalStateException("TDLib уже используется другой операцией");
+    try {
+      client = TdNative.createClient();
+      if (client <= 0) throw new IllegalStateException("TDLib не включена в APK: нет официальной libtdjson.so");
+      reader = new Thread(() -> {
+        boolean closeConfirmed = false;
         try {
-          JSONObject obj = new JSONObject(response);
-          if (obj.optLong("@client_id", client) != client) continue;
-          String extra = obj.optString("@extra", "");
-          if (!extra.isEmpty()) {
-            CompletableFuture<JSONObject> promise = pending.remove(extra);
-            if (promise != null) { promise.complete(obj); continue; }
+          while (running) {
+            String response = TdNative.receive(0.5);
+            if (response == null) continue;
+            try {
+              JSONObject obj = new JSONObject(response);
+              if (obj.optLong("@client_id", 0) != client) continue;
+              JSONObject auth = obj.optJSONObject("authorization_state");
+              if ("updateAuthorizationState".equals(obj.optString("@type")) &&
+                  auth != null && "authorizationStateClosed".equals(auth.optString("@type"))) {
+                closeConfirmed = true;
+                running = false;
+                if (!closing) listener.onUpdate(obj);
+                continue;
+              }
+              String extra = obj.optString("@extra", "");
+              if (!extra.isEmpty()) {
+                CompletableFuture<JSONObject> promise = pending.remove(extra);
+                if (promise != null) { promise.complete(obj); continue; }
+              }
+              if (obj.optString("@type").startsWith("update")) listener.onUpdate(obj);
+            } catch (Exception ignored) { /* Don't log private Telegram content. */ }
           }
-          if (obj.optString("@type").startsWith("update")) listener.onUpdate(obj);
-        } catch (Exception ignored) { /* Don't log private Telegram content. */ }
-      }
-    }, "tdlib-event-pump");
-    reader.setDaemon(true);
-    reader.start();
+        } finally {
+          synchronized(sendLock) {
+            running = false;
+            for(CompletableFuture<JSONObject> v:pending.values())v.cancel(true);
+            pending.clear();
+          }
+          // A failed reader cannot establish that the native client is closed.
+          // Retain the global receiver reservation until process restart.
+          if (closeConfirmed) TdNative.releaseReceiver();
+        }
+      }, "tdlib-event-pump");
+      reader.setDaemon(true);
+      reader.start();
+    } catch (RuntimeException | Error failure) {
+      TdNative.releaseReceiver();
+      throw failure;
+    }
   }
   public CompletableFuture<JSONObject> call(JSONObject request) {
     synchronized(sendLock) {
-      if(!running)throw new IllegalStateException("TDLib client is closed");
+      if(!running || closing)throw new IllegalStateException("TDLib client is closing or closed");
       String id = Long.toString(sequence.incrementAndGet());
       CompletableFuture<JSONObject> result = new CompletableFuture<>();
       pending.put(id, result);
@@ -69,7 +106,7 @@ public final class TdGateway {
       long seconds = TelegramRateLimit.waitSeconds(code, message);
       if (seconds >= 0) throw new TelegramRateLimit.Delay(seconds);
       // Never include the serialized request or message contents in the exception.
-      throw new IllegalStateException("Telegram отклонил запрос, код " + code + ". При повторной ошибке останови экспорт.");
+      throw new TelegramError(code);
     }
     return response;
   }
@@ -80,8 +117,8 @@ public final class TdGateway {
   }
   public void stop() {
     synchronized(sendLock) {
-      if(!running)return;
-      running=false;
+      if(!running || closing)return;
+      closing=true;
       // Close the native client while preserving the separate TDLib authorization for restart.
       // This is NOT logOut: only the explicit button ends the Telegram account session.
       try{TdNative.send(client,"{\"@type\":\"close\"}");}catch(Throwable ignored){}

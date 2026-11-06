@@ -65,7 +65,7 @@ public final class HeavyMockTdlib implements ExportEngine.Transport {
     return type("message").put("id",id).put("chat_id",CHAT_ID)
       .put("date",1700000000L-(long)index*51)
       .put("sender_id",type("messageSenderUser").put("user_id",index%2==0?1001:1002))
-      .put("is_outgoing",index%2==0).put("can_be_saved",true).put("content",content);
+      .put("is_outgoing",index%2==0).put("can_be_saved",true).put("edit_date",0).put("self_destruct_in",0).put("auto_delete_in",0).put("content",content);
   }
   private File path(int fileId) throws Exception{
     mediaLength(fileId);
@@ -111,6 +111,13 @@ public final class HeavyMockTdlib implements ExportEngine.Transport {
         if(id!=1001&&id!=1002)throw new SecurityException("Invalid synthetic user");
         return type("user").put("id",id).put("first_name",id==1001?"Тест-А":"Тест-Б")
           .put("last_name","Вымышленный");
+      }
+      case "getMessageLocally": {
+        if(request.getLong("chat_id")!=CHAT_ID)throw new SecurityException("Unknown synthetic chat");
+        long delta=START_ID-request.getLong("message_id");
+        if(delta<0 || delta%STEP!=0 || delta/STEP>=MESSAGE_COUNT)
+          throw new IOException("Synthetic local message unavailable");
+        return message((int)(delta/STEP));
       }
       case "getChatHistory": {
         if(request.getLong("chat_id")!=CHAT_ID)

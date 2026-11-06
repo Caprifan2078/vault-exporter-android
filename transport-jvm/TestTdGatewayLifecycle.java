@@ -22,6 +22,9 @@ public final class TestTdGatewayLifecycle {
     ExecutorService pool=Executors.newCachedThreadPool();
     TdGateway gw=new TdGateway(event->{});
     try {
+      boolean concurrentDenied=false;
+      try {new TdGateway(event->{});} catch(IllegalStateException expected){concurrentDenied=true;}
+      check(concurrentDenied,"Second TDLib receiver was accepted");
       // 150 asynchronous unanswered calls, all cancelled: no pending map growth.
       List<CompletableFuture<JSONObject>> jobs=new ArrayList<>();
       for(int i=0;i<150;i++)jobs.add(gw.call(TdGateway.cmd("getChatHistory")));
@@ -57,6 +60,20 @@ public final class TestTdGatewayLifecycle {
       check("error".equals(one.get(2,TimeUnit.SECONDS).optString("@type")),"Wrong first reply");
       check(pending(gw).isEmpty(),"Completed requests retained");
 
+      for(int code:new int[]{404,500}) {
+        Future<?> failure=pool.submit(()->{
+          try{gw.await(TdGateway.cmd("loadChats"),10);throw new AssertionError("error accepted");}
+          catch(TdGateway.TelegramError expected){check(expected.code==code,"error code lost");}
+          catch(Exception ex){throw new RuntimeException(ex);}
+        });
+        String errorId=sentId();TdNative.error(91,errorId,code);failure.get(2,TimeUnit.SECONDS);
+      }
+      CompletableFuture<JSONObject> identity=gw.call(TdGateway.cmd("getChat"));
+      String identityId=sentId();
+      TdNative.inbound.add(new JSONObject().put("@extra",identityId).put("@type","ok").toString());
+      Thread.sleep(75);
+      check(!identity.isDone(),"Response without client identity was accepted");
+      TdNative.reply(91,identityId,"ok");identity.get(2,TimeUnit.SECONDS);
       // A cancelled Android worker must retain its interrupted flag.
       Future<?> interrupted=pool.submit(()-> {
         Thread.currentThread().interrupt();
@@ -91,6 +108,30 @@ public final class TestTdGatewayLifecycle {
       boolean denied=false;
       try{gw.call(TdGateway.cmd("getChat"));}catch(IllegalStateException expected){denied=true;}
       check(denied,"Stopped TDLib accepted new requests");
+      check(TdNative.acquireReceiver(),"Receiver owner was not released");
+      boolean probeDenied=false;
+      try{new TdGateway(event->{});}catch(IllegalStateException expected){probeDenied=true;}
+      check(probeDenied,"Gateway overlapped offline diagnostic receiver");
+      TdNative.releaseReceiver();
+      TdGateway reopened=new TdGateway(event->{});reopened.stop();
+      TdNative.autoClose=false;
+      TdGateway slow=new TdGateway(event->{});
+      slow.stop();
+      boolean stillOwned=!TdNative.acquireReceiver();
+      if(!stillOwned)TdNative.releaseReceiver();
+      check(stillOwned,"Receiver released before TDLib confirmed close");
+      boolean closedRejected=false;
+      try{slow.call(TdGateway.cmd("getChat"));}catch(IllegalStateException expected){closedRejected=true;}
+      check(closedRejected,"Closing client accepted a new request");
+      TdNative.closed(93);
+      boolean released=false;
+      for(int i=0;i<40;i++){
+        if(TdNative.acquireReceiver()){released=true;TdNative.releaseReceiver();break;}
+        Thread.sleep(50);
+      }
+      check(released,"Receiver not released after close confirmation");
+      TdNative.autoClose=true;
+      TdGateway afterClose=new TdGateway(event->{});afterClose.stop();
       System.out.println("PASS: cancellations, timeout, interrupt preservation, ordered concurrent shutdown and no pending leaks (fake TDLib)");
     } finally {gw.stop();pool.shutdownNow();}
   }
