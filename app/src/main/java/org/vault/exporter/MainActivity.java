@@ -572,7 +572,29 @@ public final class MainActivity extends Activity {
             try { TdNative.send(clientId, "{\"@type\":\"close\"}"); }
             catch (Throwable ignored) { /* diagnostic cleanup only */ }
           }
-          if (receiverOwned) TdNative.releaseReceiver();
+          boolean closeConfirmed = clientId <= 0;
+          if (clientId > 0) {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+            try {
+              while (System.nanoTime() < deadline) {
+                String wire = TdNative.receive(0.5);
+                if (wire == null) continue;
+                JSONObject response = new JSONObject(wire);
+                JSONObject auth = response.optJSONObject("authorization_state");
+                if (response.optLong("@client_id", 0) == clientId &&
+                    "updateAuthorizationState".equals(response.optString("@type")) &&
+                    auth != null && "authorizationStateClosed".equals(auth.optString("@type"))) {
+                  closeConfirmed = true;
+                  break;
+                }
+              }
+            } catch (Throwable ignored) { /* Keep reservation if closure is uncertain. */ }
+          }
+          if (receiverOwned && closeConfirmed) TdNative.releaseReceiver();
+          if (!closeConfirmed) {
+            nativeProbePassed = false;
+            result = "TDLIB_OFFLINE_PROBE_FAIL: закрытие TDLib не подтверждено. Перезапусти приложение.";
+          }
           nativeProbeRunning.set(false);
           final String message = result;
           showStatus(message);

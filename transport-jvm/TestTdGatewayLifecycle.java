@@ -114,6 +114,24 @@ public final class TestTdGatewayLifecycle {
       check(probeDenied,"Gateway overlapped offline diagnostic receiver");
       TdNative.releaseReceiver();
       TdGateway reopened=new TdGateway(event->{});reopened.stop();
+      TdNative.autoClose=false;
+      TdGateway slow=new TdGateway(event->{});
+      slow.stop();
+      boolean stillOwned=!TdNative.acquireReceiver();
+      if(!stillOwned)TdNative.releaseReceiver();
+      check(stillOwned,"Receiver released before TDLib confirmed close");
+      boolean closedRejected=false;
+      try{slow.call(TdGateway.cmd("getChat"));}catch(IllegalStateException expected){closedRejected=true;}
+      check(closedRejected,"Closing client accepted a new request");
+      TdNative.closed(93);
+      boolean released=false;
+      for(int i=0;i<40;i++){
+        if(TdNative.acquireReceiver()){released=true;TdNative.releaseReceiver();break;}
+        Thread.sleep(50);
+      }
+      check(released,"Receiver not released after close confirmation");
+      TdNative.autoClose=true;
+      TdGateway afterClose=new TdGateway(event->{});afterClose.stop();
       System.out.println("PASS: cancellations, timeout, interrupt preservation, ordered concurrent shutdown and no pending leaks (fake TDLib)");
     } finally {gw.stop();pool.shutdownNow();}
   }

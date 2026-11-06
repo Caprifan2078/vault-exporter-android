@@ -9,6 +9,7 @@ public final class TdNative {
   static final AtomicInteger nextClient=new AtomicInteger(91);
   static final AtomicBoolean gateNextHistory=new AtomicBoolean();
   static final AtomicBoolean receiverOwned=new AtomicBoolean();
+  static volatile boolean autoClose=true;
   static boolean acquireReceiver(){return receiverOwned.compareAndSet(false,true);}
   static void releaseReceiver(){receiverOwned.set(false);}
   static volatile CountDownLatch historyEntered=new CountDownLatch(0);
@@ -31,6 +32,11 @@ public final class TdNative {
       }
     }
     outbound.add(request);
+    if(autoClose && request.contains("\"@type\":\"close\""))closed(client);
+  }
+  static void closed(long client){
+    inbound.add(new JSONObject().put("@client_id",client).put("@type","updateAuthorizationState")
+      .put("authorization_state",new JSONObject().put("@type","authorizationStateClosed")).toString());
   }
   static String receive(double seconds){
     try{return inbound.poll(Math.max(1,(long)(seconds*1000)), TimeUnit.MILLISECONDS);}

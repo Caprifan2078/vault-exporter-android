@@ -38,8 +38,9 @@ assert '"Не удалось настроить TDLib: " + e.getMessage()' not i
 call = between(gateway, "public CompletableFuture<JSONObject> call(", "public JSONObject await(")
 stop = between(gateway, "public void stop()", "\n}")
 assert "synchronized(sendLock)" in call and "synchronized(sendLock)" in stop
-assert "running=false;" in stop
-assert stop.index("running=false;") < stop.index('TdNative.send(client,')
+assert "closing=true;" in stop
+assert stop.index("closing=true;") < stop.index('TdNative.send(client,')
+assert "if (closeConfirmed) TdNative.releaseReceiver();" in gateway
 assert 'if(ex instanceof InterruptedException) Thread.currentThread().interrupt();' in gateway
 
 print("PASS: clean TDLib startup rollback, one-time API credentials, serialized shutdown, interrupt propagation")
