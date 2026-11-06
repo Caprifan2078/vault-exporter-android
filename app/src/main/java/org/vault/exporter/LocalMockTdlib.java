@@ -142,7 +142,7 @@ public final class LocalMockTdlib implements ExportEngine.Transport {
         if(request.getLong("chat_id")!=CHAT_ID)throw new SecurityException("Unknown synthetic chat");
         long delta=100000L-request.getLong("message_id");
         if(delta<0 || delta%17L!=0 || delta/17L>=MESSAGE_COUNT)
-          throw new IOException("Synthetic local message unavailable");
+          throw new java.io.IOException("Synthetic local message unavailable");
         return message((int)(delta/17L));
       }
       case "getChatHistory": {
