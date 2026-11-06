@@ -129,16 +129,17 @@ public final class TestHardenedExportEngine {
       send(protectRoot,new TdGateway(ids(3),protectRoot),chat,resumed);
       checkArchive(resumed.toByteArray(),ids(3),0);
     }
-    for(int mode=1;mode<=6;mode++) {
+    for(int mode=1;mode<=9;mode++) {
       File localRoot=Files.createTempDirectory("cached-message-change-").toFile();
-      TdGateway changed=new TdGateway(ids(3),localRoot);changed.setLocalFault(mode);
+      long[] sample=ids(mode==9?4:3);
+      TdGateway changed=new TdGateway(sample,localRoot);changed.setLocalFault(mode);
       ByteArrayOutputStream out=new ByteArrayOutputStream();boolean stopped=false;
       try{send(localRoot,changed,chat,out);}
       catch(SecurityException | IOException expected){stopped=true;}
       yes(stopped && out.size()==0,"Unsafe cached-message state accepted: "+mode);
       ByteArrayOutputStream recoveredLocal=new ByteArrayOutputStream();
-      send(localRoot,new TdGateway(ids(3),localRoot),chat,recoveredLocal);
-      checkArchive(recoveredLocal.toByteArray(),ids(3),0);
+      send(localRoot,new TdGateway(sample,localRoot),chat,recoveredLocal);
+      checkArchive(recoveredLocal.toByteArray(),sample,mode==9?1:0);
     }
     TdGateway fails=new TdGateway(shortIds,root);fails.failOnHistoryCall(9);boolean failed=false;
     try{send(root,fails,chat,new ByteArrayOutputStream());}

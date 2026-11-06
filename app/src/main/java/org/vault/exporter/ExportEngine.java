@@ -447,6 +447,45 @@ public final class ExportEngine {
       throw new IOException("Тип сообщения "+kind+" ещё не проверен на медиа: "+mid);
     return result;
   }
+  private static String uniqueRemoteId(Attachment a) {
+    JSONObject remote=a.file.optJSONObject("remote");
+    return remote==null?"":remote.optString("unique_id","");
+  }
+  private static void compareFormatted(JSONObject first,JSONObject second)throws IOException {
+    if(first==null && second==null)return;
+    if(first==null || second==null || !(first.opt("text") instanceof String) ||
+        !(second.opt("text") instanceof String) ||
+        !first.optString("text").equals(second.optString("text")))
+      throw new CachedMessageStateException("Текст сохранённого сообщения изменился");
+    Object a=first.opt("entities"),b=second.opt("entities");
+    if(a==JSONObject.NULL)a=null;
+    if(b==JSONObject.NULL)b=null;
+    if((a!=null && !(a instanceof JSONArray)) || (b!=null && !(b instanceof JSONArray)) ||
+        !Objects.equals(a==null?null:a.toString(),b==null?null:b.toString()))
+      throw new CachedMessageStateException("Форматирование сохранённого сообщения изменилось");
+  }
+  /** Compare stable message content, ignoring mutable local file cache fields. */
+  private static void compareStoredContent(JSONObject snapshot,JSONObject current)throws IOException {
+    JSONObject before=snapshot.optJSONObject("content"),after=current.optJSONObject("content");
+    if(before==null || after==null)throw new CachedMessageStateException("Нет содержимого сообщения");
+    String kind=before.optString("@type","");
+    if(kind.isEmpty() || !kind.equals(after.optString("@type","")))
+      throw new CachedMessageStateException("Тип сохранённого сообщения изменился");
+    if("messageText".equals(kind))
+      compareFormatted(before.optJSONObject("text"),after.optJSONObject("text"));
+    compareFormatted(before.optJSONObject("caption"),after.optJSONObject("caption"));
+    List<Attachment> oldFiles=attachments(snapshot),newFiles=attachments(current);
+    if(oldFiles.size()!=newFiles.size())
+      throw new CachedMessageStateException("Вложения сохранённого сообщения изменились");
+    for(int i=0;i<oldFiles.size();i++){
+      Attachment a=oldFiles.get(i),b=newFiles.get(i);
+      if(a.ordinal!=b.ordinal || !a.role.equals(b.role) || !a.category.equals(b.category))
+        throw new CachedMessageStateException("Вложения сохранённого сообщения изменились");
+      String oldId=uniqueRemoteId(a),newId=uniqueRemoteId(b);
+      if(!oldId.isEmpty() && !newId.isEmpty() && !oldId.equals(newId))
+        throw new CachedMessageStateException("Медиа сохранённого сообщения изменилось");
+    }
+  }
   private static String attachmentExtension(Attachment a,JSONObject msg){
     if("photo".equals(a.category))return ".jpg";
     if("preview_video".equals(a.role)||"paid_video".equals(a.role)||
@@ -632,6 +671,7 @@ public final class ExportEngine {
             checkMessageRestriction(current);
             if(validatedEditDate(snapshot)!=validatedEditDate(current))
               throw new CachedMessageStateException("Сообщение изменилось после сохранения прогресса. Экспорт остановлен.");
+            compareStoredContent(snapshot,current);
           }
         }
         if(page%10==0 || page==s.pages)

@@ -56,7 +56,7 @@ public final class TdGateway {
       default->throw new IllegalArgumentException("No such media "+id);
     };
   }
-  private static JSONObject file(int id){return new JSONObject().put("id",id);}
+  private static JSONObject file(int id){return new JSONObject().put("id",id).put("remote",new JSONObject().put("unique_id","fake-"+id));}
   private File privateCacheFile(int id){return new File(root,"tdlib/files/file-"+id+".bin");}
   private JSONObject content(int position,long id){
     switch(position){
@@ -101,6 +101,9 @@ public final class TdGateway {
       if(localFault==4 && index==1)msg.put("edit_date",123);
       if(localFault==5 && index==1)msg.put("edit_date","invalid");
       if(localFault==6 && index==1)msg.remove("edit_date");
+      if(localFault==7 && index==1)msg.put("content",new JSONObject().put("@type","messageText").put("text",new JSONObject().put("text","changed")));
+      if(localFault==8 && index==1)msg.put("content",new JSONObject().put("@type","messageContact"));
+      if(localFault==9 && index==3)msg.optJSONObject("content").optJSONObject("voice_note").optJSONObject("voice").put("remote",new JSONObject().put("unique_id","different-media"));
       return msg;
     }
     if(type.equals("getChatHistory")){
