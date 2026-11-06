@@ -15,6 +15,8 @@ public final class TdGateway {
   int localFault;
   public void setLocalFault(int mode){localFault=mode;}
   public void protectOnChatCall(int n){protectOnChatCall=n;}
+  boolean distinctSenders;
+  public void useDistinctSenders(){distinctSenders=true;}
   int fakePageSize=7;
   public void setPageSize(int value){if(value<1||value>100)throw new IllegalArgumentException();fakePageSize=value;}
   boolean inconsistentEmpty,protectedChat,secretChat,largeVideo;
@@ -116,7 +118,7 @@ public final class TdGateway {
         JSONObject message=new JSONObject().put("id",ids[i])
           .put("chat_id", (i==misroutedPosition ||
               (misrouteStalledProbe && from==ids[6]-1 && i==7))?9999L:req.getLong("chat_id"))
-          .put("sender_id",new JSONObject().put("@type","messageSenderUser").put("user_id",55))
+          .put("sender_id",new JSONObject().put("@type","messageSenderUser").put("user_id",distinctSenders?1000000L+i:55))
           .put("can_be_saved",true).put("edit_date",0).put("self_destruct_in",0).put("auto_delete_in",0)
           .put("content",overrides.getOrDefault(i,content(i,ids[i])));
         if(i==1 && omittedTimer!=null)message.remove(omittedTimer);

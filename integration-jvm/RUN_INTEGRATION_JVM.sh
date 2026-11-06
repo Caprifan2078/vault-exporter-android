@@ -10,11 +10,15 @@ javac -d "$OUT" \
   integration-jvm/fakes/org/vault/exporter/*.java \
   "$ROOT"/{OfflineArchiveFixture,ExportEngine,HistoryCursor,StagingCipher,ChunkedVault,ResumeStore,ArchiveWriter,ArchiveVerifier,TelegramRateLimit}.java \
   integration-jvm/TestHardenedExportEngine.java integration-jvm/TestEngineBoundedMemory.java \
-  integration-jvm/TestOfflineArchiveFixture.java integration-jvm/TestLargeHistory.java
+  integration-jvm/TestOfflineArchiveFixture.java integration-jvm/TestLargeHistory.java integration-jvm/TestManySenders.java
 java -Xmx128m -cp "$OUT" TestHardenedExportEngine
 java -Xmx32m -cp "$OUT" TestEngineBoundedMemory
 java -Xmx64m -cp "$OUT" TestOfflineArchiveFixture
 
 if [[ "${VAULT_RUN_LARGE_HISTORY:-0}" == 1 ]]; then
   java -Xmx128m -cp "$OUT" TestLargeHistory
+fi
+
+if [[ "${VAULT_RUN_MANY_SENDERS:-0}" == 1 ]]; then
+  java -Xmx128m -cp "$OUT" TestManySenders
 fi
