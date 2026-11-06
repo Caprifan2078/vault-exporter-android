@@ -813,15 +813,18 @@ public final class MainActivity extends Activity {
       try {
         ArrayList<Long> keys=new ArrayList<>(); ArrayList<String> titles=new ArrayList<>();
         HashSet<Long> encountered=new HashSet<>();
+        boolean possiblyIncomplete=false;
         for(String listName:new String[]{"chatListMain","chatListArchive"}) {
           JSONObject chatList=TdGateway.cmd(listName);
+          boolean allLoaded=false;
           for(int batch=0;batch<4;batch++) {
             try { td.await(TdGateway.cmd("loadChats").put("chat_list",chatList).put("limit",100),60); }
-            catch(TdGateway.TelegramError e) {if(e.code==404)break;throw e;}
+            catch(TdGateway.TelegramError e) {if(e.code==404){allLoaded=true;break;}throw e;}
           }
           JSONArray ids=td.await(TdGateway.cmd("getChats").put("chat_list",chatList).put("limit",500),45)
             .optJSONArray("chat_ids");
-          if(ids==null)continue;
+          if(ids==null)throw new IOException("Telegram вернул некорректный список чатов");
+          if(!allLoaded || ids.length()>=500)possiblyIncomplete=true;
           for(int i=0;i<ids.length();i++) {
             long id=ids.getLong(i);if(!encountered.add(id))continue;
             JSONObject chat=td.await(TdGateway.cmd("getChat").put("chat_id",id),30);
@@ -832,12 +835,14 @@ public final class MainActivity extends Activity {
             titles.add(("chatListArchive".equals(listName)?"[Архив] ":"")+chat.optString("title","Без названия"));
           }
         }
+        final boolean listMayBeIncomplete=possiblyIncomplete;
         runOnUiThread(() -> {
-          if(keys.isEmpty()) { showStatus("Подходящих облачных чатов нет."); return; }
+          if(keys.isEmpty()) { showStatus(listMayBeIncomplete ? "Список чатов загружен не полностью. Попробуй ещё раз." : "Подходящих облачных чатов нет."); return; }
           EditText search=new EditText(this);
           search.setSingleLine(true);
           search.setHint("Часть названия чата (можно оставить пустым)");
           new AlertDialog.Builder(this).setTitle("Найти переписку")
+            .setMessage(listMayBeIncomplete ? "Список может быть неполным. Показаны только загруженные чаты; поиск проверяет их." : "В результатах показываются первые 200 совпадений.")
             .setView(search).setNegativeButton("Отмена",null)
             .setPositiveButton("Показать чаты",(dialog,unused)->{
               String query=search.getText().toString().toLowerCase(java.util.Locale.ROOT).trim();

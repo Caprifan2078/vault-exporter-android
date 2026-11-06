@@ -14,12 +14,16 @@ def section(first: str, next_one: str):
     end = source.index(next_one, start + len(first))
     return source[start:end]
 
+choose = section('private void chooseChat()', 'private static char[] extractAndClear')
 picker = section('private void requestPassphrase()', '@Override protected void onActivityResult')
 result = section('@Override protected void onActivityResult', 'private void confirmResetProgress()')
 reset = section('private void confirmResetProgress()', 'private void confirmLogout()')
 finish = section('@Override protected void onDestroy()', '\n}')
 
 checks = {
+    'Chat list error is not mistaken for end': 'catch(TdGateway.TelegramError e) {if(e.code==404){allLoaded=true;break;}throw e;}' in choose,
+    'Truncated list is disclosed to user': 'if(!allLoaded || ids.length()>=500)possiblyIncomplete=true;' in choose and 'Список может быть неполным' in choose,
+    'Malformed chat list fails visibly': 'if(ids==null)throw new IOException' in choose,
     'Chat ID captured before opening picker': 'final long dialogChatId=selectedChatId;' in picker,
     'Second picker blocked while pending': 'exporting || pendingPassphrase!=null' in picker,
     'Chat changes during password dialog fail closed': 'dialogChatId!=selectedChatId' in picker,
