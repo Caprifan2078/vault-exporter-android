@@ -94,6 +94,13 @@ public final class TestHardenedExportEngine {
       try{send(restrictionRoot,gateway,chat,output);}catch(SecurityException expected){denied=true;}
       yes(denied && output.size()==0,"Invalid restriction accepted, case "+mode);
     }
+    for(String badType:new String[]{"chatTypeSecret","unknownFutureChatType",""}) {
+      File badChatRoot=Files.createTempDirectory("unsupported-chat-type-").toFile();
+      TdGateway badChat=new TdGateway(shortIds,badChatRoot);badChat.setChatType(badType);
+      ByteArrayOutputStream out=new ByteArrayOutputStream();boolean refused=false;
+      try{send(badChatRoot,badChat,chat,out);}catch(SecurityException expected){refused=true;}
+      yes(refused && out.size()==0,"Unknown or secret chat accepted: "+badType);
+    }
     for(int mode=1;mode<=2;mode++) {
       File limitRoot=Files.createTempDirectory("participant-stop-").toFile();
       TdGateway gateway=new TdGateway(ids(3),limitRoot);gateway.failParticipant(mode);

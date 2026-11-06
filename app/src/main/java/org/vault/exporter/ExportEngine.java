@@ -448,13 +448,21 @@ public final class ExportEngine {
     return extension(a.category,msg);
   }
   private static byte[] bytes(StringBuilder builder){return builder.toString().getBytes(StandardCharsets.UTF_8);}
+  /** Refuse unknown chat types: they may carry restrictions we do not support. */
+  public static boolean isExportableChat(JSONObject chat) {
+    if(chat==null || !Boolean.FALSE.equals(chat.opt("has_protected_content")))return false;
+    JSONObject type=chat.optJSONObject("type");
+    if(type==null)return false;
+    switch(type.optString("@type")) {
+      case "chatTypePrivate": case "chatTypeBasicGroup": case "chatTypeSupergroup": return true;
+      default: return false;
+    }
+  }
   public Summary export(long chatId,OutputStream output,char[] password) throws Exception {
     JSONObject chat=safeRead(req("getChat","chat_id",chatId),30);
     if (!chat.has("id") || chat.optLong("id") != chatId)
       throw new IOException("TDLib вернула другой чат при проверке выбранной переписки");
-    if(!Boolean.FALSE.equals(chat.opt("has_protected_content")))throw new SecurityException("Сохранение содержимого этого чата ограничено или не подтверждено");
-    if("chatTypeSecret".equals(object(chat,"type")==null?"":object(chat,"type").optString("@type")))
-      throw new SecurityException("Облачный API не экспортирует секретные чаты");
+    if(!isExportableChat(chat))throw new SecurityException("Чат защищён, секретный или его тип не подтверждён");
     byte[] sessionSecret=new SessionSecrets(app).getOrCreate();
     try(ResumeStore stage=new ResumeStore(new File(app.getFilesDir(),"export-progress"),chatId,sessionSecret)){
       Arrays.fill(sessionSecret,(byte)0);

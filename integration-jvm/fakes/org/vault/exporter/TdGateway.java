@@ -16,6 +16,8 @@ public final class TdGateway {
   final Map<Integer,JSONObject> overrides=new HashMap<>();
   String expiringField; Object expiringValue;
   boolean omitMessageCanBeSaved,omitChatProtection;
+  String testChatType="chatTypePrivate";
+  public void setChatType(String type){testChatType=type;}
   int participantFailure;
   public void failParticipant(int mode){participantFailure=mode;}
   public void setExpiringMessage(String field,Object value){expiringField=field;expiringValue=value;}
@@ -59,7 +61,7 @@ public final class TdGateway {
     String type=req.optString("@type");
     if(type.equals("getChat")){
       if(protectedChat)return new JSONObject().put("id",req.getLong("chat_id")).put("has_protected_content",true);
-      JSONObject chat=new JSONObject().put("id",misroutedChatMetadata?9999L:req.getLong("chat_id")).put("title","Synthetic").put("type",new JSONObject().put("@type",secretChat?"chatTypeSecret":"chatTypePrivate"));
+      JSONObject chat=new JSONObject().put("id",misroutedChatMetadata?9999L:req.getLong("chat_id")).put("title","Synthetic").put("type",new JSONObject().put("@type",secretChat?"chatTypeSecret":testChatType));
       if(!omitChatProtection)chat.put("has_protected_content",false);
       return chat;
     }

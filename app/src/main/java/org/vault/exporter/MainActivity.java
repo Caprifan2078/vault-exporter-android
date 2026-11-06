@@ -828,9 +828,7 @@ public final class MainActivity extends Activity {
           for(int i=0;i<ids.length();i++) {
             long id=ids.getLong(i);if(!encountered.add(id))continue;
             JSONObject chat=td.await(TdGateway.cmd("getChat").put("chat_id",id),30);
-            if(!Boolean.FALSE.equals(chat.opt("has_protected_content")))continue;
-            JSONObject type=chat.optJSONObject("type");
-            if(type!=null && "chatTypeSecret".equals(type.optString("@type")))continue;
+            if(!ExportEngine.isExportableChat(chat))continue;
             keys.add(id);
             titles.add(("chatListArchive".equals(listName)?"[Архив] ":"")+chat.optString("title","Без названия"));
           }
@@ -842,7 +840,7 @@ public final class MainActivity extends Activity {
           search.setSingleLine(true);
           search.setHint("Часть названия чата (можно оставить пустым)");
           new AlertDialog.Builder(this).setTitle("Найти переписку")
-            .setMessage(listMayBeIncomplete ? "Список может быть неполным. Показаны только загруженные чаты; поиск проверяет их." : "В результатах показываются первые 200 совпадений.")
+            .setMessage(listMayBeIncomplete ? "Список может быть неполным. Поиск проверяет загруженные чаты и показывает первые 200 совпадений." : "В результатах показываются первые 200 совпадений.")
             .setView(search).setNegativeButton("Отмена",null)
             .setPositiveButton("Показать чаты",(dialog,unused)->{
               String query=search.getText().toString().toLowerCase(java.util.Locale.ROOT).trim();
@@ -853,7 +851,7 @@ public final class MainActivity extends Activity {
                   found.add(n);names.add(titles.get(n));
                 }
               }
-              if(found.isEmpty()){showStatus("Такой чат не найден. Повтори поиск.");return;}
+              if(found.isEmpty()){showStatus(listMayBeIncomplete ? "Чат не найден среди загруженных. Список может быть неполным." : "Такой чат не найден. Повтори поиск.");return;}
               new AlertDialog.Builder(this).setTitle("Выбрать чат")
                 .setItems(names.toArray(new String[0]),(picked,which)->{
                   int original=found.get(which);
