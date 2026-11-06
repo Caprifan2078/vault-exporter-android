@@ -57,15 +57,41 @@ public final class TestTdGatewayLifecycle {
       check("error".equals(one.get(2,TimeUnit.SECONDS).optString("@type")),"Wrong first reply");
       check(pending(gw).isEmpty(),"Completed requests retained");
 
-      CompletableFuture<JSONObject> never=gw.call(TdGateway.cmd("getChatHistory"));
+      // A cancelled Android worker must retain its interrupted flag.
+      Future<?> interrupted=pool.submit(()-> {
+        Thread.currentThread().interrupt();
+        try {gw.await(TdGateway.cmd("getChat"),10);throw new AssertionError("Missing interruption");}
+        catch(InterruptedException expected){
+          check(Thread.currentThread().isInterrupted(),"Interrupted flag was swallowed");
+        } catch(Exception e){throw new RuntimeException(e);}
+      });
       sentId();
-      gw.stop();
-      check(never.isCancelled(),"Stop did not cancel inflight request");
-      check(pending(gw).isEmpty(),"Stop leaked pending calls");
+      interrupted.get(2,TimeUnit.SECONDS);
+      check(pending(gw).isEmpty(),"Interrupted await retained request");
+
+      // Block a request INSIDE fake native send while shutdown races with it.
+      // If close jumps ahead, an outbound read can be sent after client shutdown.
+      TdNative.holdNextHistorySend();
+      java.util.concurrent.atomic.AtomicReference<CompletableFuture<JSONObject>> active=
+          new java.util.concurrent.atomic.AtomicReference<>();
+      Future<?> sending=pool.submit(()->active.set(gw.call(TdGateway.cmd("getChatHistory"))));
+      check(TdNative.historyEntered.await(2,TimeUnit.SECONDS),"History send gate did not start");
+      CountDownLatch stopStarted=new CountDownLatch(1);
+      Future<?> stopping=pool.submit(()->{stopStarted.countDown();gw.stop();});
+      check(stopStarted.await(2,TimeUnit.SECONDS),"Shutdown did not start");
+      try{Thread.sleep(70);}finally{TdNative.historyRelease.countDown();}
+      sending.get(3,TimeUnit.SECONDS);
+      stopping.get(3,TimeUnit.SECONDS);
+      check(active.get()!=null && active.get().isCancelled(),"Stop did not cancel concurrent inflight request");
+      check(pending(gw).isEmpty(),"Stop leaked concurrent request");
+      JSONObject firstSent=new JSONObject(TdNative.outbound.poll(2,TimeUnit.SECONDS));
+      JSONObject lastSent=new JSONObject(TdNative.outbound.poll(2,TimeUnit.SECONDS));
+      check("getChatHistory".equals(firstSent.getString("@type")),"Client closed before last request dispatched");
+      check("close".equals(lastSent.getString("@type")),"Client was not closed after last request");
       boolean denied=false;
       try{gw.call(TdGateway.cmd("getChat"));}catch(IllegalStateException expected){denied=true;}
       check(denied,"Stopped TDLib accepted new requests");
-      System.out.println("PASS: 150 cancellations, awaited timeout, late/out-of-order replies, and session stop release pending work (fake TDLib)");
+      System.out.println("PASS: cancellations, timeout, interrupt preservation, ordered concurrent shutdown and no pending leaks (fake TDLib)");
     } finally {gw.stop();pool.shutdownNow();}
   }
 }
