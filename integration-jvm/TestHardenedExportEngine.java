@@ -67,6 +67,19 @@ public final class TestHardenedExportEngine {
       try{send(expiryRoot,expiry,chat,output);}catch(SecurityException expected){refused=true;}
       yes(refused && output.size()==0,"Expiring message exported: "+field);
     }
+    // Simulate an older app version having checkpointed an expiring message.
+    File legacyRoot=Files.createTempDirectory("legacy-expiring-stage-").toFile();
+    byte[] legacySecret=new byte[32];Arrays.fill(legacySecret,(byte)0x5c);
+    try(ResumeStore legacy=new ResumeStore(new File(legacyRoot,"export-progress"),chat,legacySecret)) {
+      JSONObject message=new JSONObject().put("id",123).put("chat_id",chat)
+        .put("auto_delete_in",30).put("content",new JSONObject().put("@type","messageText"));
+      legacy.putPage(1,(message.toString()+"\n").getBytes(StandardCharsets.UTF_8),new byte[0]);
+      legacy.checkpoint(new ResumeStore.State(chat,123,1,1,0,true));
+    }
+    ByteArrayOutputStream legacyOutput=new ByteArrayOutputStream();boolean legacyRefused=false;
+    try{send(legacyRoot,new TdGateway(shortIds,legacyRoot),chat,legacyOutput);}
+    catch(SecurityException expected){legacyRefused=true;}
+    yes(legacyRefused && legacyOutput.size()==0,"Legacy expiring checkpoint was exported");
     TdGateway fails=new TdGateway(shortIds,root);fails.failOnHistoryCall(9);boolean failed=false;
     try{send(root,fails,chat,new ByteArrayOutputStream());}
     catch(IOException ex){failed=ex.getMessage().contains("SIMULATED_NETWORK_DROP");}

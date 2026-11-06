@@ -317,10 +317,9 @@ public final class ExportEngine {
       throw new IOException("Повторный идентификатор вложения: "+messageId);
     out.add(new Attachment(file,category,mime,name,role,ordinal));
   }
-  private static List<Attachment> attachments(JSONObject msg)throws IOException {
+  private static void checkMessageRestriction(JSONObject msg) {
     long mid=msg.optLong("id");
     JSONObject c=msg.optJSONObject("content");
-    String kind=c==null?"":c.optString("@type","");
     if(msg.has("can_be_saved")&&!msg.optBoolean("can_be_saved",true))
       throw new SecurityException("Сохранение сообщения запрещено Telegram: "+mid);
     // Destruction and auto-delete metadata belongs to the message, not only
@@ -330,6 +329,12 @@ public final class ExportEngine {
       throw new SecurityException("Нельзя экспортировать самоудаляющееся сообщение: "+mid);
     if(c!=null&&c.optBoolean("is_secret",false))
       throw new SecurityException("Нельзя экспортировать самоисчезающее медиа: "+mid);
+  }
+  private static List<Attachment> attachments(JSONObject msg)throws IOException {
+    checkMessageRestriction(msg);
+    long mid=msg.optLong("id");
+    JSONObject c=msg.optJSONObject("content");
+    String kind=c==null?"":c.optString("@type","");
     ArrayList<Attachment> result=new ArrayList<>();
     String category=type(msg);
     if(!"other".equals(category)){
@@ -445,6 +450,14 @@ public final class ExportEngine {
     try(ResumeStore stage=new ResumeStore(new File(app.getFilesDir(),"export-progress"),chatId,sessionSecret)){
       Arrays.fill(sessionSecret,(byte)0);
       ResumeStore.State s=stage.state();
+      // Recheck checkpoints written by older versions before resuming or
+      // finalizing them; those versions did not inspect expiry metadata.
+      for(int page=1;page<=s.pages;page++) {
+        try(BufferedReader reader=new BufferedReader(new InputStreamReader(stage.openPage(page),StandardCharsets.UTF_8))) {
+          String row;
+          while((row=reader.readLine())!=null) if(!row.isEmpty()) checkMessageRestriction(new JSONObject(row));
+        }
+      }
       if(s.pages>0)progress.show("Продолжаем: уже сохранено сообщений: "+s.messages+", файлов: "+s.media);
       while(!s.historyFinished) {
         // TDLib requires the last received ID, not id-1 (message IDs can be sparse).
