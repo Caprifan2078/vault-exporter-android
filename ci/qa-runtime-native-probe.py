@@ -33,10 +33,12 @@ def probe():
     deadline = time.monotonic() + 40
     while time.monotonic() < deadline:
         time.sleep(1)
-        texts = " ".join(n.get("text", "") for n in screen().iter("node"))
-        if "TDLIB_OFFLINE_PROBE_PASS" in texts:
+        texts = [n.get("text", "") for n in screen().iter("node")]
+        # The background status can still contain PASS from the first run.
+        # Require the current diagnostic dialog's success text instead.
+        if any("Готово! Движок TDLib отвечает." in value and "TDLIB_OFFLINE_PROBE_PASS" in value for value in texts):
             return
-        if "TDLIB_OFFLINE_PROBE_FAIL" in texts:
+        if any("TDLIB_OFFLINE_PROBE_FAIL" in value for value in texts):
             raise RuntimeError("TDLib offline diagnostic reported failure")
     raise RuntimeError("TDLib offline diagnostic timed out")
 
