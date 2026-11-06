@@ -98,3 +98,35 @@ jobs:
           name: VAULT-REAL-TELEGRAM-RUNTIME-API-QA-UNTESTED
           path: dist/
           retention-days: 1
+
+  offline-emulator-smoke:
+    needs: runtime-apk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: VAULT-REAL-TELEGRAM-RUNTIME-API-QA-UNTESTED
+          path: qa-apk
+      - name: Verify APK checksum
+        run: cd qa-apk && sha256sum -c SHA256SUMS.txt
+      - name: Enable KVM when available
+        run: |
+          if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; else echo 'KVM unavailable'; fi
+      - name: Install and launch without network or authentication
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            set -euo pipefail
+            adb shell svc wifi disable
+            adb shell svc data disable
+            adb install qa-apk/VaultExporter_REAL_TG_RUNTIME_QA_20261102.apk
+            adb shell am start -W -n org.vault.exporter.runtimeqa/org.vault.exporter.MainActivity
+            adb shell pidof org.vault.exporter.runtimeqa
+            adb shell dumpsys activity activities | grep -F 'org.vault.exporter.runtimeqa'
