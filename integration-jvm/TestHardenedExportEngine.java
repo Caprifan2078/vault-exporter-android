@@ -118,6 +118,17 @@ public final class TestHardenedExportEngine {
     TdGateway missingUser=new TdGateway(ids(3),missingUserRoot);missingUser.failParticipant(4);
     ByteArrayOutputStream anonymous=new ByteArrayOutputStream();send(missingUserRoot,missingUser,chat,anonymous);
     checkArchive(anonymous.toByteArray(),ids(3),0);
+    // A chat can become protected while downloading or immediately before packing.
+    for(int protectAt:new int[]{2,3}) {
+      File protectRoot=Files.createTempDirectory("chat-protection-changed-").toFile();
+      TdGateway changing=new TdGateway(ids(3),protectRoot);changing.protectOnChatCall(protectAt);
+      ByteArrayOutputStream out=new ByteArrayOutputStream();boolean stopped=false;
+      try{send(protectRoot,changing,chat,out);}catch(SecurityException expected){stopped=true;}
+      yes(stopped && out.size()==0,"Changed chat protection was ignored at check "+protectAt);
+      ByteArrayOutputStream resumed=new ByteArrayOutputStream();
+      send(protectRoot,new TdGateway(ids(3),protectRoot),chat,resumed);
+      checkArchive(resumed.toByteArray(),ids(3),0);
+    }
     TdGateway fails=new TdGateway(shortIds,root);fails.failOnHistoryCall(9);boolean failed=false;
     try{send(root,fails,chat,new ByteArrayOutputStream());}
     catch(IOException ex){failed=ex.getMessage().contains("SIMULATED_NETWORK_DROP");}

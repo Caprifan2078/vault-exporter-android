@@ -458,11 +458,15 @@ public final class ExportEngine {
       default: return false;
     }
   }
-  public Summary export(long chatId,OutputStream output,char[] password) throws Exception {
+  private JSONObject verifyChat(long chatId) throws Exception {
     JSONObject chat=safeRead(req("getChat","chat_id",chatId),30);
     if (!chat.has("id") || chat.optLong("id") != chatId)
       throw new IOException("TDLib вернула другой чат при проверке выбранной переписки");
     if(!isExportableChat(chat))throw new SecurityException("Чат защищён, секретный или его тип не подтверждён");
+    return chat;
+  }
+  public Summary export(long chatId,OutputStream output,char[] password) throws Exception {
+    JSONObject chat=verifyChat(chatId);
     byte[] sessionSecret=new SessionSecrets(app).getOrCreate();
     try(ResumeStore stage=new ResumeStore(new File(app.getFilesDir(),"export-progress"),chatId,sessionSecret)){
       Arrays.fill(sessionSecret,(byte)0);
@@ -581,6 +585,9 @@ public final class ExportEngine {
             downloadedOnPage++;
           }
         }
+        // Protection may change while history/media are being downloaded.
+        // getChat is local for non-bot users in the pinned TDLib schema.
+        verifyChat(chatId);
         int next=s.pages+1;
         stage.putPage(next,bytes(line),bytes(index));
         s=new ResumeStore.State(chatId,oldest,next,s.messages+page.size(),s.media+downloadedOnPage,false);
@@ -588,6 +595,8 @@ public final class ExportEngine {
         stage.checkpoint(s);
         progress.show("Сохранено: "+s.messages+" сообщений · "+s.media+" медиа. Можно продолжить после перерыва.");
       }
+      // Recheck current chat restrictions immediately before writing output.
+      chat=verifyChat(chatId);
       // No downloads required during finalization; partial final .tva may be recreated from staging.
       progress.show("Все доступные данные получены. Собираем защищённый архив…");
       int files=0;
