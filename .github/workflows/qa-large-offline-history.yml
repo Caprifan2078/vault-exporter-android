@@ -1,0 +1,25 @@
+name: QA synthetic 100k message recovery
+on:
+  push:
+    branches: [qa/full-audit-20261106]
+    paths:
+      - '.github/workflows/qa-large-offline-history.yml'
+      - 'app/src/main/java/org/vault/exporter/ExportEngine.java'
+      - 'app/src/main/java/org/vault/exporter/HistoryCursor.java'
+      - 'app/src/main/java/org/vault/exporter/ResumeStore.java'
+      - 'app/src/main/java/org/vault/exporter/ArchiveVerifier.java'
+      - 'integration-jvm/**'
+permissions:
+  contents: read
+jobs:
+  offline-large-history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Export 100k synthetic messages with outage and recovery
+        run: VAULT_RUN_LARGE_HISTORY=1 bash integration-jvm/RUN_INTEGRATION_JVM.sh

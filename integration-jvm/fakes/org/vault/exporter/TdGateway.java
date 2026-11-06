@@ -11,6 +11,8 @@ public final class TdGateway {
   }
   final long[] ids;final File root;
   int calls,failHistoryAt,failFileId,failChatAt;
+  int fakePageSize=7;
+  public void setPageSize(int value){if(value<1||value>100)throw new IllegalArgumentException();fakePageSize=value;}
   boolean inconsistentEmpty,protectedChat,secretChat,largeVideo;
   int misroutedPosition=-1;
   boolean misroutedChatMetadata,misrouteStalledProbe;
@@ -91,7 +93,7 @@ public final class TdGateway {
           .put("content",content(6,ids[6])));
         return new JSONObject().put("messages",arr);
       }
-      for(int i=start;i<ids.length&&i<start+Math.min(7,limit);i++) {
+      for(int i=start;i<ids.length&&i<start+Math.min(fakePageSize,limit);i++) {
         JSONObject message=new JSONObject().put("id",ids[i])
           .put("chat_id", (i==misroutedPosition ||
               (misrouteStalledProbe && from==ids[6]-1 && i==7))?9999L:req.getLong("chat_id"))
