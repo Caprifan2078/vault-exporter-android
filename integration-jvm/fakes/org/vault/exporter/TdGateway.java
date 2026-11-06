@@ -76,6 +76,8 @@ public final class TdGateway {
       if(participantFailure==2)throw new InterruptedException("synthetic cancellation");
       if(participantFailure==3)throw new TelegramError(429);
       if(participantFailure==4)throw new TelegramError(404);
+      if(participantFailure==5)throw new IOException("synthetic network outage");
+      if(participantFailure==6)throw new java.util.concurrent.TimeoutException("synthetic timeout");
       return new JSONObject().put("first_name","Test");
     }
     if(type.equals("getChatHistory")){
