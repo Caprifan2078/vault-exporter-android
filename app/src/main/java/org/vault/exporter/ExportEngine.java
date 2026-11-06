@@ -329,8 +329,8 @@ public final class ExportEngine {
       throw new SecurityException("Нельзя экспортировать самоудаляющееся сообщение: "+mid);
     for(String field:new String[]{"self_destruct_in","auto_delete_in"}) {
       Object value=msg.opt(field);
-      if(msg.has(field)) {
-        if(!(value instanceof Number))throw new SecurityException("Некорректный таймер сообщения: "+mid);
+      {
+        if(!(value instanceof Number))throw new SecurityException("Отсутствует или некорректен таймер сообщения: "+mid);
         double seconds=((Number)value).doubleValue();
         if(Double.isNaN(seconds)||Double.isInfinite(seconds)||seconds!=0)
           throw new SecurityException("Нельзя экспортировать самоудаляющееся сообщение: "+mid);

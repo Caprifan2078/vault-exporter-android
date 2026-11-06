@@ -16,6 +16,8 @@ public final class TdGateway {
   final Map<Integer,JSONObject> overrides=new HashMap<>();
   String expiringField; Object expiringValue;
   boolean omitMessageCanBeSaved,omitChatProtection;
+  String omittedTimer;
+  public void omitMessageTimer(String field){omittedTimer=field;}
   String testChatType="chatTypePrivate";
   public void setChatType(String type){testChatType=type;}
   int participantFailure;
@@ -77,7 +79,7 @@ public final class TdGateway {
       if(from>0)while(start<ids.length&&ids[start]>from)start++;
       if(start>=ids.length)return new JSONObject().put("messages",arr);
       if(misrouteStalledProbe && from==ids[6]){
-        arr.put(new JSONObject().put("id",ids[6]).put("chat_id",req.getLong("chat_id")).put("can_be_saved",true)
+        arr.put(new JSONObject().put("id",ids[6]).put("chat_id",req.getLong("chat_id")).put("can_be_saved",true).put("self_destruct_in",0).put("auto_delete_in",0)
           .put("content",content(6,ids[6])));
         return new JSONObject().put("messages",arr);
       }
@@ -86,8 +88,9 @@ public final class TdGateway {
           .put("chat_id", (i==misroutedPosition ||
               (misrouteStalledProbe && from==ids[6]-1 && i==7))?9999L:req.getLong("chat_id"))
           .put("sender_id",new JSONObject().put("@type","messageSenderUser").put("user_id",55))
-          .put("can_be_saved",true)
+          .put("can_be_saved",true).put("self_destruct_in",0).put("auto_delete_in",0)
           .put("content",overrides.getOrDefault(i,content(i,ids[i])));
+        if(i==1 && omittedTimer!=null)message.remove(omittedTimer);
         if(i==1 && omitMessageCanBeSaved)message.remove("can_be_saved");
         if(i==1 && expiringField!=null) message.put(expiringField,expiringValue);
         arr.put(message);

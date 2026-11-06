@@ -65,7 +65,7 @@ public final class HeavyMockTdlib implements ExportEngine.Transport {
     return type("message").put("id",id).put("chat_id",CHAT_ID)
       .put("date",1700000000L-(long)index*51)
       .put("sender_id",type("messageSenderUser").put("user_id",index%2==0?1001:1002))
-      .put("is_outgoing",index%2==0).put("can_be_saved",true).put("content",content);
+      .put("is_outgoing",index%2==0).put("can_be_saved",true).put("self_destruct_in",0).put("auto_delete_in",0).put("content",content);
   }
   private File path(int fileId) throws Exception{
     mediaLength(fileId);
