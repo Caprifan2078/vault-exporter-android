@@ -36,5 +36,8 @@ public final class TdNative {
   static void reply(long client,String id,String type){
     inbound.add(new JSONObject().put("@client_id",client).put("@extra",id).put("@type",type).toString());
   }
+  static void error(long client,String id,int code){
+    inbound.add(new JSONObject().put("@client_id",client).put("@extra",id).put("@type","error").put("code",code).put("message","SYNTHETIC").toString());
+  }
   static void flush(){inbound.clear();outbound.clear();}
 }

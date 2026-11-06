@@ -817,7 +817,7 @@ public final class MainActivity extends Activity {
           JSONObject chatList=TdGateway.cmd(listName);
           for(int batch=0;batch<4;batch++) {
             try { td.await(TdGateway.cmd("loadChats").put("chat_list",chatList).put("limit",100),60); }
-            catch(Exception e) {break;} // TDLib returns 404 when no more chats are available.
+            catch(TdGateway.TelegramError e) {if(e.code==404)break;throw e;}
           }
           JSONArray ids=td.await(TdGateway.cmd("getChats").put("chat_list",chatList).put("limit",500),45)
             .optJSONArray("chat_ids");
@@ -825,7 +825,7 @@ public final class MainActivity extends Activity {
           for(int i=0;i<ids.length();i++) {
             long id=ids.getLong(i);if(!encountered.add(id))continue;
             JSONObject chat=td.await(TdGateway.cmd("getChat").put("chat_id",id),30);
-            if(chat.optBoolean("has_protected_content",false))continue;
+            if(!Boolean.FALSE.equals(chat.opt("has_protected_content")))continue;
             JSONObject type=chat.optJSONObject("type");
             if(type!=null && "chatTypeSecret".equals(type.optString("@type")))continue;
             keys.add(id);

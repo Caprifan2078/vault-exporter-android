@@ -5,6 +5,13 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class TdGateway {
+  public static final class TelegramError extends IllegalStateException {
+    public final int code;
+    TelegramError(int code) {
+      super("Telegram отклонил запрос, код " + code + ". При повторной ошибке останови экспорт.");
+      this.code=code;
+    }
+  }
   public interface Listener { void onUpdate(JSONObject event); }
   private final long client;
   private final ConcurrentHashMap<String, CompletableFuture<JSONObject>> pending = new ConcurrentHashMap<>();
@@ -69,7 +76,7 @@ public final class TdGateway {
       long seconds = TelegramRateLimit.waitSeconds(code, message);
       if (seconds >= 0) throw new TelegramRateLimit.Delay(seconds);
       // Never include the serialized request or message contents in the exception.
-      throw new IllegalStateException("Telegram отклонил запрос, код " + code + ". При повторной ошибке останови экспорт.");
+      throw new TelegramError(code);
     }
     return response;
   }

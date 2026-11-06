@@ -94,6 +94,15 @@ public final class TestHardenedExportEngine {
       try{send(restrictionRoot,gateway,chat,output);}catch(SecurityException expected){denied=true;}
       yes(denied && output.size()==0,"Invalid restriction accepted, case "+mode);
     }
+    for(int mode=1;mode<=2;mode++) {
+      File limitRoot=Files.createTempDirectory("participant-stop-").toFile();
+      TdGateway gateway=new TdGateway(ids(3),limitRoot);gateway.failParticipant(mode);
+      boolean stopped=false;
+      try{send(limitRoot,gateway,chat,new ByteArrayOutputStream());}
+      catch(IOException expected){stopped=mode==1 && expected.getCause() instanceof TelegramRateLimit.Delay;}
+      catch(InterruptedException expected){stopped=mode==2 && Thread.currentThread().isInterrupted();Thread.interrupted();}
+      yes(stopped,"Participant lookup swallowed rate limit or cancellation: "+mode);
+    }
     TdGateway fails=new TdGateway(shortIds,root);fails.failOnHistoryCall(9);boolean failed=false;
     try{send(root,fails,chat,new ByteArrayOutputStream());}
     catch(IOException ex){failed=ex.getMessage().contains("SIMULATED_NETWORK_DROP");}

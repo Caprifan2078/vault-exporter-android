@@ -57,6 +57,14 @@ public final class TestTdGatewayLifecycle {
       check("error".equals(one.get(2,TimeUnit.SECONDS).optString("@type")),"Wrong first reply");
       check(pending(gw).isEmpty(),"Completed requests retained");
 
+      for(int code:new int[]{404,500}) {
+        Future<?> failure=pool.submit(()->{
+          try{gw.await(TdGateway.cmd("loadChats"),10);throw new AssertionError("error accepted");}
+          catch(TdGateway.TelegramError expected){check(expected.code==code,"error code lost");}
+          catch(Exception ex){throw new RuntimeException(ex);}
+        });
+        String errorId=sentId();TdNative.error(91,errorId,code);failure.get(2,TimeUnit.SECONDS);
+      }
       // A cancelled Android worker must retain its interrupted flag.
       Future<?> interrupted=pool.submit(()-> {
         Thread.currentThread().interrupt();

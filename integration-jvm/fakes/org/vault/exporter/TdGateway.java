@@ -16,6 +16,8 @@ public final class TdGateway {
   final Map<Integer,JSONObject> overrides=new HashMap<>();
   String expiringField; Object expiringValue;
   boolean omitMessageCanBeSaved,omitChatProtection;
+  int participantFailure;
+  public void failParticipant(int mode){participantFailure=mode;}
   public void setExpiringMessage(String field,Object value){expiringField=field;expiringValue=value;}
   public void omitMessageCanBeSaved(){omitMessageCanBeSaved=true;}
   public void omitChatProtection(){omitChatProtection=true;}
@@ -61,7 +63,11 @@ public final class TdGateway {
       if(!omitChatProtection)chat.put("has_protected_content",false);
       return chat;
     }
-    if(type.equals("getUser"))return new JSONObject().put("first_name","Test");
+    if(type.equals("getUser")){
+      if(participantFailure==1)throw new TelegramRateLimit.Delay(121);
+      if(participantFailure==2)throw new InterruptedException("synthetic cancellation");
+      return new JSONObject().put("first_name","Test");
+    }
     if(type.equals("getChatHistory")){
       calls++;if(calls==failHistoryAt)throw new IOException("SIMULATED_NETWORK_DROP");
       long from=req.optLong("from_message_id");int limit=req.optInt("limit",100);
