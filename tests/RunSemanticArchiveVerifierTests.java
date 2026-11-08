@@ -55,6 +55,22 @@ public final class RunSemanticArchiveVerifierTests {
   static void change(List<Entry> fixture,int pos,String body){fixture.set(pos,e(fixture.get(pos).name,body));}
   static void testCorruption()throws Exception {
     ArrayList<Entry> good=fixture();pass(good,8);
+    // Paid media, chat photo animations and link previews may carry more than
+    // one different TDLib file in the SAME message. Their TVA must verify.
+    ArrayList<Entry> multi=fixture();
+    multi.set(1,e("media-index/page-000001.jsonl",
+      index(100,501,".jpg",PHOTO)+index(100,503,".mp4",CIRCLE)));
+    multi.add(3,e("media/100/503.mp4",CIRCLE));
+    multi.set(8,e("manifest.json",manifest(3,3)));
+    pass(multi,9);
+    // A reused (message_id, file_id) must still be rejected even if the
+    // attacker changes the filename/extension to evade duplicate-path checks.
+    ArrayList<Entry> duplicateFileId=fixture();
+    duplicateFileId.set(1,e("media-index/page-000001.jsonl",
+      index(100,501,".jpg",PHOTO)+index(100,501,".mp4",CIRCLE)));
+    duplicateFileId.add(3,e("media/100/501.mp4",CIRCLE));
+    duplicateFileId.set(8,e("manifest.json",manifest(3,3)));
+    reject(duplicateFileId,"same message and TDLib file id under distinct paths");
     ArrayList<Entry> a;
     a=fixture();change(a,7,manifest(300,2));reject(a,"inflated message count");
     a=fixture();change(a,7,manifest(3,200));reject(a,"inflated media count");
