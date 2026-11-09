@@ -1,6 +1,8 @@
 package org.vault.exporter;
 
 import org.json.JSONObject;
+import java.io.File;
+import java.io.IOException;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -24,12 +26,24 @@ public final class TdGateway {
   private volatile boolean closing = false;
 
   public TdGateway(Listener callback) {
+    this(callback, null);
+  }
+
+  /** Only the Android production path passes the app-private cache root.
+   * Reserve the global TDLib receiver BEFORE deleting any downloads, so a
+   * concurrent client cannot be active while the stale cache is scrubbed.
+   */
+  public TdGateway(Listener callback, File appPrivateFilesDir) {
     this.listener = callback;
     // The TDLib C API has one global receive queue; multiple reader threads
     // race and can consume another client's responses. Fail closed instead.
     if (!TdNative.acquireReceiver())
       throw new IllegalStateException("TDLib уже используется другой операцией");
     try {
+      if (appPrivateFilesDir != null) {
+        try { TdCacheStartupCleaner.clean(appPrivateFilesDir); }
+        catch (IOException e) { throw new IllegalStateException("Небезопасный кэш TDLib, подключение остановлено", e); }
+      }
       client = TdNative.createClient();
       if (client <= 0) throw new IllegalStateException("TDLib не включена в APK: нет официальной libtdjson.so");
       reader = new Thread(() -> {
