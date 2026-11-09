@@ -696,6 +696,10 @@ public final class MainActivity extends Activity {
     showStatus("Инициализация TDLib по вашему запросу…");
     worker.execute(() -> {
       try {
+        // Process death bypasses download finally-blocks. Scrub the dedicated
+        // plaintext TDLib file cache BEFORE opening any new native client.
+        // Encrypted resume data and TDLib's database remain untouched.
+        TdCacheStartupCleaner.clean(getFilesDir());
         // Do not materialize the Keystore-wrapped TDLib secret as a long-lived
         // immutable String before TDLib actually requests its parameters.
         td = new TdGateway(this::onTdEvent);
