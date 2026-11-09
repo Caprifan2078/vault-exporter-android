@@ -127,6 +127,10 @@ public final class RunSemanticArchiveVerifierTests {
     a=fixture();change(a,3,"{\"id\":110}\n");reject(a,"ascending message ID across pages");
     a=fixture();change(a,0,"{\"id\":\"100\"}\n{\"id\":90}\n");reject(a,"string message IDs");
     a=fixture();change(a,0,"{\"id\":100,\"id\":100}\n{\"id\":90}\n");reject(a,"duplicate JSON message id key");
+    a=fixture();change(a,0,"{\"id\":100,\"content\":{\"caption\":{\"text\":\"first\",\"text\":\"second\"}}}\n{\"id\":90}\n");reject(a,"duplicate nested message field");
+    a=fixture();change(a,6,"[{\"name\":{\"first_name\":\"A\",\"first_name\":\"B\"}}]");reject(a,"duplicate nested participants field");
+    a=fixture();change(a,7,manifest(3,2).replace("\"schema\"", "\"meta\":{\"value\":1,\"value\":2},\"schema\""));reject(a,"duplicate nested manifest field");
+    a=fixture();change(a,1,index(100,501,".jpg",PHOTO).replace("\"category\"", "\"metadata\":{\"x\":1,\"x\":2},\"category\""));reject(a,"duplicate nested media-index field");
     a=fixture();change(a,0,"{\"id\":100,}\n{\"id\":90}\n");reject(a,"bad JSON");
     a=fixture();change(a,0,"{\"id\":100}\n".repeat(2001));reject(a,"unbounded page count");
     a=fixture();a.set(3,e("messages/page-000003.jsonl","{\"id\":70}\n"));reject(a,"missing page numbering");
