@@ -66,3 +66,7 @@ P0: дождаться _результата CI, а не предполагат�
 - Для тестов в Linux GitHub runner: `bash RUN_ALL_OFFLINE.sh`; Android QA: `qa-android-compile.yml`; полный pinned TDLib + эмулятор: `qa-runtime-apk.yml`.
 - Разрешения: ничего дополнительного для офлайн CI; для реального Telegram QA требуются отдельное согласие, изолированный тестовый аккаунт и личные developer credentials, которые не должны передаваться в чат.
 - Контрольная точка: этот файл и PR #4.
+
+### Дополнительная интеграционная регрессия
+- Коммит `3ba4e0c25d994df1d28d17f33f6f4e460329c956`: `integration-jvm/TestHardenedExportEngine.java` создаёт `messagePaidMedia` с оригинальным фото и видео (разные `file_id`) и прогоняет **реальный ExportEngine**, fake TDLib, шифрование TVA1, `ArchiveVerifier` и проверку байтов/числа 3 медиа (два на одном сообщении плюс голосовое в другом). Код приложения не менялся, только тест.
+- CI https://github.com/Caprifan2078/vault-exporter-android/actions/runs/42538315340 — job `static-and-jvm` **success**, в том числе эта регрессия и остальные JVM тесты; Android compile был ещё in_progress при проверке. Не объявлять полный workflow успешным до завершения обоих jobs.
