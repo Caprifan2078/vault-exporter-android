@@ -55,6 +55,28 @@ public final class RunSemanticArchiveVerifierTests {
   static void change(List<Entry> fixture,int pos,String body){fixture.set(pos,e(fixture.get(pos).name,body));}
   static void testCorruption()throws Exception {
     ArrayList<Entry> good=fixture();pass(good,8);
+    // Real TVA1 messages and manifest are scoped to exactly one chat.
+    // Legacy minimal fixtures without any chat_id remain readable.
+    ArrayList<Entry> scoped=fixture();
+    change(scoped,0,"{\"id\":100,\"chat_id\":-1001}\n{\"id\":90,\"chat_id\":-1001}\n");
+    change(scoped,3,"{\"id\":70,\"chat_id\":-1001}\n");
+    change(scoped,7,manifest(3,2).replace("\"messages\":3","\"chat_id\":-1001,\"messages\":3"));
+    pass(scoped,8);
+    ArrayList<Entry> mismatchedChat=new ArrayList<>(scoped);
+    change(mismatchedChat,0,"{\"id\":100,\"chat_id\":-1001}\n{\"id\":90,\"chat_id\":-1002}\n");
+    reject(mismatchedChat,"mixed chat messages");
+    ArrayList<Entry> changedManifestChat=new ArrayList<>(scoped);
+    change(changedManifestChat,7,manifest(3,2).replace("\"messages\":3","\"chat_id\":-1002,\"messages\":3"));
+    reject(changedManifestChat,"manifest points at another chat");
+    ArrayList<Entry> omittedChat=new ArrayList<>(scoped);
+    change(omittedChat,3,"{\"id\":70}\n");
+    reject(omittedChat,"one message lacks chat_id");
+    ArrayList<Entry> invalidChat=new ArrayList<>(scoped);
+    change(invalidChat,3,"{\"id\":70,\"chat_id\":\"-1001\"}\n");
+    reject(invalidChat,"chat_id as string");
+    ArrayList<Entry> missingManifestScope=new ArrayList<>(scoped);
+    change(missingManifestScope,7,manifest(3,2));
+    pass(missingManifestScope,8); // pre-manifest archives: consistent IDs still checked
     // Paid media, chat photo animations and link previews may carry more than
     // one different TDLib file in the SAME message. Their TVA must verify.
     ArrayList<Entry> multi=fixture();
