@@ -57,6 +57,17 @@ public final class RunSemanticArchiveVerifierTests {
     ArrayList<Entry> good=fixture();pass(good,8);
     // Real TVA1 messages and manifest are scoped to exactly one chat.
     // Legacy minimal fixtures without any chat_id remain readable.
+
+    ArrayList<Entry> emptyChat=new ArrayList<>();
+    emptyChat.add(e("participants.json","[]"));
+    emptyChat.add(e("manifest.json",manifest(0,0).replace("\"messages\":0","\"chat_id\":-1001,\"messages\":0")));
+    pass(emptyChat,2);
+    ArrayList<Entry> emptyInvalidChat=new ArrayList<>(emptyChat);
+    emptyInvalidChat.set(1,e("manifest.json",manifest(0,0).replace("\"messages\":0","\"chat_id\":0,\"messages\":0")));
+    reject(emptyInvalidChat,"zero chat id in empty archive");
+    ArrayList<Entry> unscopedMessages=fixture();
+    change(unscopedMessages,7,manifest(3,2).replace("\"messages\":3","\"chat_id\":-1001,\"messages\":3"));
+    reject(unscopedMessages,"manifest identifies a chat but messages omit chat_id");
     ArrayList<Entry> scoped=fixture();
     change(scoped,0,"{\"id\":100,\"chat_id\":-1001}\n{\"id\":90,\"chat_id\":-1001}\n");
     change(scoped,3,"{\"id\":70,\"chat_id\":-1001}\n");
