@@ -2,6 +2,9 @@ package org.vault.exporter;
 
 import java.io.*;
 import java.nio.file.Files;
+import java.nio.file.DirectoryStream;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
 import java.util.Set;
@@ -79,6 +82,8 @@ public final class ResumeStore implements Closeable {
       this.root = new File(privateRoot,"chat-"+chatId).getCanonicalFile();
       if (!root.isDirectory() && !root.mkdirs())
         throw new IOException("Не удалось создать закрытый каталог");
+      // The per-chat lock is held: no other writer can own these unfinished files.
+      removeAbandonedWrites(root);
       Mac mac = Mac.getInstance("HmacSHA256");
       mac.init(new SecretKeySpec(sessionSecret,"HmacSHA256"));
       this.key=mac.doFinal(("TelegramVault resume store v1|"+chatId).getBytes(StandardCharsets.UTF_8));
@@ -92,6 +97,26 @@ public final class ResumeStore implements Closeable {
     this.lockFile=handle;
     this.exclusiveLock=held;
   }
+  /** Remove encrypted temporary files left by process death, never committed data.
+   * All writes use File.createTempFile(".pending-", ".tmp") in these directories.
+   * Called only after acquiring the exclusive per-chat lock; no symlinks followed.
+   * DirectoryStream prevents loading thousands of media filenames into memory. */
+  private static void removeAbandonedWrites(File chatRoot) throws IOException {
+    for (String dirName : new String[]{"", "pages", "indexes", "media", "media-identities"}) {
+      Path dir = dirName.isEmpty() ? chatRoot.toPath() : new File(chatRoot,dirName).toPath();
+      if (!Files.exists(dir, LinkOption.NOFOLLOW_LINKS)) continue;
+      if (!Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS))
+        throw new IOException("Unsafe staging directory during recovery");
+      try (DirectoryStream<Path> abandoned=Files.newDirectoryStream(dir, ".pending-*.tmp")) {
+        for (Path file : abandoned) {
+          if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("Unsafe pending staging file");
+          Files.delete(file);
+        }
+      }
+    }
+  }
+
   public State state() throws Exception {
     File state = path("checkpoint.enc");
     if (!state.exists()) return new State(chatId,0,0,0,0,false);
