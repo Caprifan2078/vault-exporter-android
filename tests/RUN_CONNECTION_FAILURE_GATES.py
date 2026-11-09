@@ -20,6 +20,8 @@ failure = between(activity, "private void abandonFailedConnection(", "private in
 startup = between(activity, "private void beginConnect()", "private void abandonFailedConnection(")
 td_params = between(activity, 'if ("authorizationStateWaitTdlibParameters".equals(name))', 'runOnUiThread(() -> {')
 
+assert "TdCacheStartupCleaner.clean(getFilesDir());" in startup, "Missing pre-TDLib crash-cache scrub"
+assert startup.index("TdCacheStartupCleaner.clean(getFilesDir());") < startup.index("td = new TdGateway("), "Cleanup must precede any native TDLib client"
 assert "abandonFailedConnection(" in startup, "Failed initial getAuthorizationState must release client"
 assert "abandonFailedConnection(" in td_params, "Failed setTdlibParameters must release client"
 for token in (
