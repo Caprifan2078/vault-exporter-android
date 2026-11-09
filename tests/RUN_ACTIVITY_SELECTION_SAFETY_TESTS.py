@@ -18,6 +18,7 @@ choose = section('private void chooseChat()', 'private static char[] extractAndC
 picker = section('private void requestPassphrase()', '@Override protected void onActivityResult')
 result = section('@Override protected void onActivityResult', 'private void confirmResetProgress()')
 reset = section('private void confirmResetProgress()', 'private void confirmLogout()')
+logout = section('private void confirmLogout()', 'private static void erasePrivateTree')
 finish = section('@Override protected void onDestroy()', '\n}')
 
 checks = {
@@ -38,6 +39,11 @@ checks = {
     'Reset captures target before asynchronous execution': 'final long resetChatId=selectedChatId;' in reset,
     'Reset worker uses frozen target rather than mutable UI state': '"export-progress"),resetChatId,secret)' in reset and '"export-progress"),selectedChatId,secret)' not in reset,
     'No picker password persisted in Bundle': 'savedInstanceState.put' not in picker and 'savedInstanceState.put' not in result,
+    'Export entry rejects logout in progress': 'if(logoutRequested)' in picker,
+    'Picker result rejects export during logout': '|| logoutRequested)' in result,
+    'Reset rejects logout in progress': 'exporting || pendingPassphrase!=null || logoutRequested' in reset,
+    'Logout cannot overlap another logout or picker': 'if(exporting || logoutRequested || pendingPassphrase!=null)return;' in logout,
+    'Late duplicate logout confirmation rejected': 'if(exporting || logoutRequested || pendingPassphrase!=null)return;' in logout.split('.setPositiveButton("Завершить сеанс"')[1],
     'Activity destruction clears pending chat/password': 'pendingChatId=0;' in finish and "Arrays.fill(pendingPassphrase,'\\0')" in finish,
 }
 for name, passed in checks.items():
