@@ -46,3 +46,23 @@ P0: дождаться _результата CI, а не предполагат�
 
 ## Степень готовности
 Нельзя вывести объективный единый процент из только офлайн-CI. Ориентировочно: значительный объём инфраструктуры/кода уже существует, офлайн QA покрывает много сценариев; главный пользовательский сценарий остаётся **0 реально подтверждённых end-to-end Telegram-сессий**. Release-ready = **нет**. Проценты тестов и продуктовой готовности не смешивать.
+
+## Итерация: исправление многовложенных сообщений и проверка CI (9 ноября 2026)
+- В `ArchiveVerifier.verify` найден подтверждённый дефект: `usedIds.add(message_id)` запрещал **любые** два файла одного сообщения. `ExportEngine.attachments` уже поддерживал несколько файлов (`messagePaidMedia`, анимированные фото чата, link preview). Исправлено на уникальную пару `message_id:file_id`: разные файлы одного сообщения разрешены, повтор одного `file_id` — отказ. Изменение: `08989d4a9965dcac71b46d3867119bb0aac99c33`.
+- `RunSemanticArchiveVerifierTests`: положительный защищённый TVA с двумя файлами одного сообщения; отрицательный TVA с повтором того же `file_id` под другим расширением. Тест: `a166c3816b242860dcd3dc279a77baae983cfd36`.
+- Проверено: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/42537787833 — оба jobs завершены **success**: static/JVM, криптоархив, интеграция/восстановление, TDLib/JNI, компиляция двух Android-конфигураций. Это НЕ проверка реального экспорта.
+- Оптимизирована нагрузка CI: в `.github/workflows/qa-runtime-apk.yml` введена `concurrency` по `github.ref` с `cancel-in-progress: true`; более новый push отменяет устаревшую задачу той же ветки. Правка `275448db8d44c3304415d0b353ec29caeeaa5d18`. Ранее запущенные workflow без группы отменяться автоматически не обязаны.
+- На предыдущем коммите `ef496b0` в run https://github.com/Caprifan2078/vault-exporter-android/actions/runs/42535045773 job `runtime-apk` завершился **success**: TDLib rebuilt from source + assemble APK + подпись. Оба offline emulator jobs на момент этой записи были **queued**, поэтому полная Android runtime проверка текущего кода **не подтверждена**. Наличие успешного APK на старом коммите не доказывает, что он включает фикс ArchiveVerifier.
+- Новейший runtime QA на коммите `275448db`: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/42537900091 — в процессе сборки TDLib, результат ещё не подтверждён. Workflow артефакты — краткоживущие приватные QA-материалы, не production release.
+
+### RESUME STATE
+- Проект: Vault Exporter (Android Telegram exporter).
+- Репозиторий: `Caprifan2078/vault-exporter-android` (private).
+- Ветка: `qa/recovery-audit-20261109`, PR #4 draft → `qa/full-audit-20261106`; `main` не менять.
+- Последняя проверенная базовая версия: `0.9-test-gated-alpha`. Ветка на коммите `275448db8d44c3304415d0b353ec29caeeaa5d18` до данного документационного коммита.
+- Последняя задача: исправление неверного запрета нескольких медиа одного сообщения; JVM + Android compile **PASS**.
+- Осталось: полный runtime QA build/emulator на текущем коде, реальная разрешённая тестовая авторизация/выгрузка, безопасность временного кэша и жизненный цикл, поддержка TVA в Viewer, стабильная release-подпись.
+- Следующее действие: проверить завершение run `42537900091` и его job/artifacts; при failed — точечная диагностика лога на этой ветке. Не повышать версию и не делать release.
+- Для тестов в Linux GitHub runner: `bash RUN_ALL_OFFLINE.sh`; Android QA: `qa-android-compile.yml`; полный pinned TDLib + эмулятор: `qa-runtime-apk.yml`.
+- Разрешения: ничего дополнительного для офлайн CI; для реального Telegram QA требуются отдельное согласие, изолированный тестовый аккаунт и личные developer credentials, которые не должны передаваться в чат.
+- Контрольная точка: этот файл и PR #4.
