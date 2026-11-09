@@ -913,6 +913,7 @@ public final class MainActivity extends Activity {
     return password;
   }
   private void requestPassphrase() {
+    if(logoutRequested){showStatus("Сначала дождись завершения выхода из Telegram.");return;}
     if(selectedChatId==0) { showStatus("Сначала выбери переписку."); return; }
     if(exporting || pendingPassphrase!=null) { showStatus("Выбор места сохранения уже выполняется."); return; }
     final long dialogChatId=selectedChatId;
@@ -985,7 +986,7 @@ public final class MainActivity extends Activity {
     // Android can recreate/kill our Activity while the document picker is open.
     // The password is intentionally NOT persisted in savedInstanceState. If it
     // vanished, reject the placeholder rather than launch with a null password.
-    if (pendingPassphrase == null || pendingChatId == 0 || selectedChatId != pendingChatId || exporting) {
+    if (pendingPassphrase == null || pendingChatId == 0 || selectedChatId != pendingChatId || exporting || logoutRequested) {
       if (pendingPassphrase != null) Arrays.fill(pendingPassphrase,'\0');
       pendingPassphrase=null;pendingChatId=0;
       try {getContentResolver().delete(destination,null,null);}catch(Exception ignored){}
@@ -1067,7 +1068,7 @@ public final class MainActivity extends Activity {
     });
   }
   private void confirmResetProgress() {
-    if(exporting || pendingPassphrase!=null)return;
+    if(exporting || pendingPassphrase!=null || logoutRequested)return;
     if(selectedChatId==0){showStatus("Сначала выбери чат.");return;}
     final long resetChatId=selectedChatId; // Freeze the target before queueing the worker.
     new AlertDialog.Builder(this).setTitle("Удалить незавершённую загрузку?")
@@ -1087,10 +1088,12 @@ public final class MainActivity extends Activity {
       }).show();
   }
   private void confirmLogout() {
-    if(exporting)return;
+    if(exporting || logoutRequested || pendingPassphrase!=null)return;
     new AlertDialog.Builder(this).setTitle("Завершить сеанс Vault?")
       .setMessage("Telegram завершит только сеанс, созданный этим экспортёром. Основное приложение Telegram останется подключённым. Незавершённые зашифрованные загрузки будут удалены. Для следующего экспорта потребуется снова войти.")
       .setNegativeButton("Остаться",null).setPositiveButton("Завершить сеанс",(dialog,n) -> {
+        // Two open dialogs can still race: reject the later confirmation.
+        if(exporting || logoutRequested || pendingPassphrase!=null)return;
         showStatus("Выходим из сеанса экспортёра…");
         logoutRequested=true;
         worker.execute(()-> {
