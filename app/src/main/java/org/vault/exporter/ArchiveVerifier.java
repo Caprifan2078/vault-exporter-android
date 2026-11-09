@@ -68,8 +68,15 @@ public final class ArchiveVerifier {
       if(c=='{'||c=='['){
         pos++;char end=c=='{'?'}':']';ws();
         if(pos<s.length()&&s.charAt(pos)==end){pos++;return new Scalar(null,'o');}
+        // A nested object must have unique keys too. Different JSON readers
+        // otherwise disagree about its meaning even in an authenticated TVA.
+        Set<String> nestedKeys=c=='{'?new HashSet<>():null;
         do {
-          if(c=='{'){string();want(':');}
+          if(c=='{'){
+            String key=string();
+            if(!nestedKeys.add(key))throw new IOException("Повторное вложенное JSON-поле: "+key);
+            want(':');
+          }
           value(depth+1);ws();
           if(pos>=s.length())throw fail();
           char sep=s.charAt(pos++);
