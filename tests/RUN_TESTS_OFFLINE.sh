@@ -4,9 +4,9 @@ cd "$(dirname "$0")/.."
 mkdir -p build/test-classes
 ROOT=app/src/main/java/org/vault/exporter
 javac -d build/test-classes \
-  "$ROOT"/{HistoryCursor,StagingCipher,ChunkedVault,ResumeStore,ArchiveWriter,ArchiveVerifier,TelegramRateLimit,SessionKeyLifecycle}.java \
-  tests/{RunCryptoTests,RunResumeTests,RunPipelineTests,RunRateLimitTests,RunStagingV2HardeningTests,RunHistoryCursorHardeningTests,RunStagingBoundedMemoryTest,RunSemanticArchiveVerifierTests,RunVerifierBoundedMemoryTest,RunExclusiveResumeLockTests,TryResumeLockChild,HoldResumeLockChild}.java tests/RunSessionKeyLifecycleTests.java
-for cls in RunCryptoTests RunResumeTests RunPipelineTests RunRateLimitTests RunStagingV2HardeningTests RunHistoryCursorHardeningTests RunSemanticArchiveVerifierTests RunExclusiveResumeLockTests org.vault.exporter.RunSessionKeyLifecycleTests; do
+  "$ROOT"/{HistoryCursor,StagingCipher,ChunkedVault,ResumeStore,ArchiveWriter,ArchiveVerifier,TelegramRateLimit,SessionKeyLifecycle,TdCacheStartupCleaner}.java \
+  tests/{RunCryptoTests,RunResumeTests,RunPipelineTests,RunRateLimitTests,RunStagingV2HardeningTests,RunHistoryCursorHardeningTests,RunStagingBoundedMemoryTest,RunSemanticArchiveVerifierTests,RunVerifierBoundedMemoryTest,RunExclusiveResumeLockTests,TryResumeLockChild,HoldResumeLockChild}.java tests/RunSessionKeyLifecycleTests.java tests/RunTdCacheStartupCleanerTests.java
+for cls in RunCryptoTests RunResumeTests RunPipelineTests RunRateLimitTests RunStagingV2HardeningTests RunHistoryCursorHardeningTests RunSemanticArchiveVerifierTests RunExclusiveResumeLockTests org.vault.exporter.RunSessionKeyLifecycleTests org.vault.exporter.RunTdCacheStartupCleanerTests; do
   java -Xmx64m -cp build/test-classes "$cls"
 done
 java -Xmx32m -cp build/test-classes RunStagingBoundedMemoryTest
