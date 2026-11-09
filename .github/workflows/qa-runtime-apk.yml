@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
   actions: read
+# A TDLib source rebuild is expensive; a newer commit supersedes older QA
+# builds on the SAME branch. Never cancel unrelated branches or workflows.
+concurrency:
+  group: qa-runtime-apk-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   runtime-apk:
     runs-on: ubuntu-24.04
