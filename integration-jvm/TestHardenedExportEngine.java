@@ -118,6 +118,26 @@ public final class TestHardenedExportEngine {
     TdGateway missingUser=new TdGateway(ids(3),missingUserRoot);missingUser.failParticipant(4);
     ByteArrayOutputStream anonymous=new ByteArrayOutputStream();send(missingUserRoot,missingUser,chat,anonymous);
     checkArchive(anonymous.toByteArray(),ids(3),0);
+    // Actual ExportEngine must export multiple paid-media files attached to ONE
+    // message and pass its final independent TVA verifier. Previously the
+    // verifier rejected the second media index row as a duplicate message ID.
+    File paidRoot=Files.createTempDirectory("paid-multi-media-").toFile();
+    TdGateway paidTd=new TdGateway(ids(5),paidRoot);
+    JSONObject paidPhotoFile=new JSONObject().put("id",502)
+      .put("remote",new JSONObject().put("unique_id","fake-502"));
+    JSONObject paidVideoFile=new JSONObject().put("id",503)
+      .put("remote",new JSONObject().put("unique_id","fake-503"));
+    JSONObject paidPhoto=new JSONObject().put("sizes",new JSONArray()
+      .put(new JSONObject().put("width",640).put("height",480).put("photo",paidPhotoFile)));
+    JSONObject paidContent=new JSONObject().put("@type","messagePaidMedia")
+      .put("media",new JSONArray()
+        .put(new JSONObject().put("@type","paidMediaPhoto").put("photo",paidPhoto))
+        .put(new JSONObject().put("@type","paidMediaVideo")
+          .put("video",new JSONObject().put("video",paidVideoFile).put("mime_type","video/mp4"))));
+    paidTd.contentOverride(0,paidContent);
+    ByteArrayOutputStream paidArchive=new ByteArrayOutputStream();
+    send(paidRoot,paidTd,chat,paidArchive);
+    checkArchive(paidArchive.toByteArray(),ids(5),3);
     // A chat can become protected while downloading or immediately before packing.
     for(int protectAt:new int[]{2,3}) {
       File protectRoot=Files.createTempDirectory("chat-protection-changed-").toFile();
