@@ -69,4 +69,6 @@ P0: дождаться _результата CI, а не предполагат�
 
 ### Дополнительная интеграционная регрессия
 - Коммит `3ba4e0c25d994df1d28d17f33f6f4e460329c956`: `integration-jvm/TestHardenedExportEngine.java` создаёт `messagePaidMedia` с оригинальным фото и видео (разные `file_id`) и прогоняет **реальный ExportEngine**, fake TDLib, шифрование TVA1, `ArchiveVerifier` и проверку байтов/числа 3 медиа (два на одном сообщении плюс голосовое в другом). Код приложения не менялся, только тест.
-- CI https://github.com/Caprifan2078/vault-exporter-android/actions/runs/42538315340 — job `static-and-jvm` **success**, в том числе эта регрессия и остальные JVM тесты; Android compile был ещё in_progress при проверке. Не объявлять полный workflow успешным до завершения обоих jobs.
+- CI https://github.com/Caprifan2078/vault-exporter-android/actions/runs/42538315340 — **success обоих jobs** (`static-and-jvm` и `android-compile`), включая экспорт двух медиа одним сообщением, криптотесты и компиляцию обеих Android-конфигураций. Это офлайн-проверка, не вход в Telegram.
+
+- Исторически более ранний запуск https://github.com/Caprifan2078/vault-exporter-android/actions/runs/42535045773 теперь подтверждён полностью: **success всех трёх jobs** — сборка pinned TDLib и подписанных QA APK, установка/нативный офлайн self-test в эмуляторе и учебный экспорт вымышленных сообщений/медиа. Этот коммит `ef496b0` предшествовал правке многовложенных сообщений и не считается проверкой текущего HEAD.
