@@ -259,8 +259,9 @@ public final class ArchiveVerifier {
         throw new IOException("Не у всех сообщений указан чат");
       if(manifest.containsKey("chat_id")) {
         long declaredChatId=number(manifest,"chat_id",Long.MIN_VALUE,Long.MAX_VALUE);
-        if(declaredChatId==0 || observedChatId==null || missingChatId ||
-            declaredChatId!=observedChatId.longValue())
+        if(declaredChatId==0 || (messages>0 &&
+            (observedChatId==null || missingChatId ||
+             declaredChatId!=observedChatId.longValue())))
           throw new IOException("Чат сообщений не совпадает с манифестом");
       }
       if(!"true".equals(required(manifest,"history_end_reached",'b').text))throw new IOException("История не завершена");
