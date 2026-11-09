@@ -195,6 +195,7 @@ public final class ArchiveVerifier {
   public static int verify(InputStream input,char[] password)throws Exception {
     ChunkedVault.Decrypt decrypted=new ChunkedVault.Decrypt(input,password);
     int entries=0,pages=0;long messages=0,media=0,previousId=Long.MAX_VALUE;
+    Long observedChatId=null;boolean missingChatId=false;
     MessageDigest digest=MessageDigest.getInstance("SHA-256");
     try(ZipInputStream zip=new ZipInputStream(decrypted)){
       ZipEntry e=zip.getNextEntry();
@@ -207,6 +208,13 @@ public final class ArchiveVerifier {
         while((line=rows.next())!=null){
           Map<String,Scalar> fields=new Json(line).fields();
           long id=number(fields,"id",1,Long.MAX_VALUE);
+          if(!fields.containsKey("chat_id"))missingChatId=true;
+          else {
+            long scope=number(fields,"chat_id",Long.MIN_VALUE,Long.MAX_VALUE);
+            if(scope==0 || (observedChatId!=null && observedChatId.longValue()!=scope))
+              throw new IOException("В архиве смешаны сообщения разных чатов");
+            observedChatId=scope;
+          }
           if(id>=previousId||!pageIds.add(id))throw new IOException("Повтор или неправильный порядок ID сообщения: "+id);
           if(pageIds.size()>MAX_PAGE_ROWS)throw new IOException("Слишком много сообщений на странице");
           previousId=id;messages++;
@@ -245,6 +253,16 @@ public final class ArchiveVerifier {
       if(e==null||!"manifest.json".equals(e.getName()))throw new IOException("Манифест отсутствует или не последняя запись");
       Map<String,Scalar> manifest=readManifest(zip);entries++;zip.closeEntry();
       if(!"tg-vault-v1".equals(str(manifest,"schema")))throw new IOException("Неизвестная схема архива");
+      // Real TDLib exports contain chat_id in every message and the manifest.
+      // Preserve compatibility with historical test fixtures omitting it entirely.
+      if(observedChatId!=null && missingChatId)
+        throw new IOException("Не у всех сообщений указан чат");
+      if(manifest.containsKey("chat_id")) {
+        long declaredChatId=number(manifest,"chat_id",Long.MIN_VALUE,Long.MAX_VALUE);
+        if(declaredChatId==0 || observedChatId==null || missingChatId ||
+            declaredChatId!=observedChatId.longValue())
+          throw new IOException("Чат сообщений не совпадает с манифестом");
+      }
       if(!"true".equals(required(manifest,"history_end_reached",'b').text))throw new IOException("История не завершена");
       if(number(manifest,"media_missing",0,Long.MAX_VALUE)!=0)throw new IOException("В архиве пропущены медиа");
       if(number(manifest,"messages",0,Long.MAX_VALUE)!=messages)throw new IOException("Число сообщений не совпадает с манифестом");
