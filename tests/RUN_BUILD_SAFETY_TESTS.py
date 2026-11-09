@@ -69,7 +69,7 @@ with TemporaryDirectory(prefix='tdlib-elf-test-') as tmp:
 # Activity recreation while ACTION_CREATE_DOCUMENT is open cannot preserve
 # passwords in Bundles. Reject a provider result without an in-memory secret.
 activity=(ROOT/'app/src/main/java/org/vault/exporter/MainActivity.java').read_text()
-assert 'if (pendingPassphrase == null || pendingChatId == 0 || selectedChatId != pendingChatId || exporting)' in activity
+assert 'if (pendingPassphrase == null || pendingChatId == 0 || selectedChatId != pendingChatId || exporting || logoutRequested)' in activity
 assert 'final long exportChatId=pendingChatId;' in activity
 assert 'export(exportChatId,out,password)' in activity
 assert 'Arrays.fill(pendingPassphrase' in activity
