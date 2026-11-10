@@ -7,6 +7,7 @@ on:
       - 'app/**'
       - 'tests/RUN_RUNTIME_QA_BUILD_GATES.py'
       - 'ci/synthetic-offline-apk-smoke.sh'
+      - 'ci/qa-runtime-native-probe.py'
       - 'scripts/prepare_tdlib_android.py'
       - 'scripts/verify_tdlib_elf.py'
 permissions:
