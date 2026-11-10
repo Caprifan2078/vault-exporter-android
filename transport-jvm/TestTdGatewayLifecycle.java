@@ -21,7 +21,17 @@ public final class TestTdGatewayLifecycle {
     TdNative.flush();
     ExecutorService pool=Executors.newCachedThreadPool();
     TdGateway gw=new TdGateway(event->{});
+    // This directory models a plaintext download left behind after SIGKILL.
+    java.nio.file.Path appFiles=java.nio.file.Files.createTempDirectory("vault-gateway-cache-");
+    java.nio.file.Path orphan=appFiles.resolve("tdlib/files/voice.ogg");
+    java.nio.file.Files.createDirectories(orphan.getParent());
+    java.nio.file.Files.write(orphan,new byte[]{1,2,3});
     try {
+      boolean rejectedBeforeCleanup=false;
+      try {new TdGateway(event->{},appFiles.toFile());}
+      catch(IllegalStateException busy) {rejectedBeforeCleanup=true;}
+      check(rejectedBeforeCleanup,"Overlapping gateway accepted while native receiver owned");
+      check(java.nio.file.Files.exists(orphan),"Blocked second gateway deleted live client cache");
       boolean concurrentDenied=false;
       try {new TdGateway(event->{});} catch(IllegalStateException expected){concurrentDenied=true;}
       check(concurrentDenied,"Second TDLib receiver was accepted");
@@ -113,7 +123,10 @@ public final class TestTdGatewayLifecycle {
       try{new TdGateway(event->{});}catch(IllegalStateException expected){probeDenied=true;}
       check(probeDenied,"Gateway overlapped offline diagnostic receiver");
       TdNative.releaseReceiver();
-      TdGateway reopened=new TdGateway(event->{});reopened.stop();
+      TdGateway reopened=new TdGateway(event->{},appFiles.toFile());
+      check(!java.nio.file.Files.exists(orphan),"Orphan TDLib plaintext cache survived safe receiver reacquisition");
+      check(java.nio.file.Files.isDirectory(appFiles.resolve("tdlib")),"Cache cleanup removed TDLib parent directory");
+      reopened.stop();
       TdNative.autoClose=false;
       TdGateway slow=new TdGateway(event->{});
       slow.stop();
