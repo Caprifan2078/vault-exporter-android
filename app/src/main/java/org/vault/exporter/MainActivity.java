@@ -696,13 +696,11 @@ public final class MainActivity extends Activity {
     showStatus("Инициализация TDLib по вашему запросу…");
     worker.execute(() -> {
       try {
-        // Process death bypasses download finally-blocks. Scrub the dedicated
-        // plaintext TDLib file cache BEFORE opening any new native client.
-        // Encrypted resume data and TDLib's database remain untouched.
-        TdCacheStartupCleaner.clean(getFilesDir());
-        // Do not materialize the Keystore-wrapped TDLib secret as a long-lived
-        // immutable String before TDLib actually requests its parameters.
-        td = new TdGateway(this::onTdEvent);
+        // The gateway first reserves TDLib's global native receiver, then
+        // scrubs orphan plaintext cache files BEFORE it creates a client.
+        // This prevents a second Activity from deleting live TDLib files.
+        // Encrypted resume state and TDLib's database are not touched.
+        td = new TdGateway(this::onTdEvent,getFilesDir());
         JSONObject stateObj = td.await(TdGateway.cmd("getAuthorizationState"),30);
         onAuthorizationState(stateObj);
       } catch(Throwable e) {
