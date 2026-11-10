@@ -1119,7 +1119,18 @@ public final class MainActivity extends Activity {
             } else {
               showStatus("Telegram не подтвердил выход. Незавершённый экспорт и ключ сохранены: "+e.getClass().getSimpleName());
             }
-          } finally {logoutRequested=false;}
+          } finally {
+            logoutRequested=false;
+            if(telegramLogoutConfirmed) runOnUiThread(() -> {
+              if(isFinishing() || isDestroyed())return;
+              // Never leave the old chat/export controls usable after logout.
+              // Status above still discloses any incomplete privacy cleanup.
+              selectedChatId=0;
+              selectedChatTitle="";
+              clearUi();
+              button("Вернуться к началу",this::showWelcome);
+            });
+          }
         });
       }).show();
   }
