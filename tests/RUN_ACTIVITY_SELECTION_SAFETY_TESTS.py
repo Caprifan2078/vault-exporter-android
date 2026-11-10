@@ -44,6 +44,7 @@ checks = {
     'Reset rejects logout in progress': 'exporting || pendingPassphrase!=null || logoutRequested' in reset,
     'Logout cannot overlap another logout or picker': 'if(exporting || logoutRequested || pendingPassphrase!=null)return;' in logout,
     'Late duplicate logout confirmation rejected': 'if(exporting || logoutRequested || pendingPassphrase!=null)return;' in logout.split('.setPositiveButton("Завершить сеанс"')[1],
+    'Logout hides stale chat and export actions': 'if(telegramLogoutConfirmed) runOnUiThread' in logout and 'selectedChatId=0;' in logout and 'clearUi();' in logout,
     'Activity destruction clears pending chat/password': 'pendingChatId=0;' in finish and "Arrays.fill(pendingPassphrase,'\\0')" in finish,
 }
 for name, passed in checks.items():
