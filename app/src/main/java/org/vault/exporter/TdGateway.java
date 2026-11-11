@@ -18,6 +18,10 @@ public final class TdGateway {
   private final long client;
   private final ConcurrentHashMap<String, CompletableFuture<JSONObject>> pending = new ConcurrentHashMap<>();
   private final AtomicLong sequence = new AtomicLong();
+  // An Ok reply to logOut is NOT the authorization-state Closed event.
+  // Only the complete LoggingOut -> Closed sequence confirms safe credential cleanup.
+  private final CompletableFuture<Void> logoutClosed = new CompletableFuture<>();
+  private volatile boolean logoutObserved = false;
   // Serialize request dispatch with shutdown: no request may escape after stop().
   private final Object sendLock = new Object();
   private final Listener listener;
@@ -56,12 +60,16 @@ public final class TdGateway {
               JSONObject obj = new JSONObject(response);
               if (obj.optLong("@client_id", 0) != client) continue;
               JSONObject auth = obj.optJSONObject("authorization_state");
-              if ("updateAuthorizationState".equals(obj.optString("@type")) &&
-                  auth != null && "authorizationStateClosed".equals(auth.optString("@type"))) {
-                closeConfirmed = true;
-                running = false;
-                if (!closing) listener.onUpdate(obj);
-                continue;
+              if ("updateAuthorizationState".equals(obj.optString("@type")) && auth != null) {
+                String state = auth.optString("@type");
+                if ("authorizationStateLoggingOut".equals(state)) logoutObserved = true;
+                if ("authorizationStateClosed".equals(state)) {
+                  closeConfirmed = true;
+                  running = false;
+                  if (logoutObserved) logoutClosed.complete(null);
+                  if (!closing) listener.onUpdate(obj);
+                  continue;
+                }
               }
               String extra = obj.optString("@extra", "");
               if (!extra.isEmpty()) {
@@ -77,6 +85,10 @@ public final class TdGateway {
             for(CompletableFuture<JSONObject> v:pending.values())v.cancel(true);
             pending.clear();
           }
+          // An interrupted event reader or a plain close() cannot prove logout.
+          // Never erase the Keystore secret without a completed logout sequence.
+          if (!logoutClosed.isDone())
+            logoutClosed.completeExceptionally(new IllegalStateException("TDLib logout not confirmed"));
           // A failed reader cannot establish that the native client is closed.
           // Retain the global receiver reservation until process restart.
           if (closeConfirmed) TdNative.releaseReceiver();
@@ -124,6 +136,17 @@ public final class TdGateway {
     }
     return response;
   }
+  /** Must be called only after logOut returned Ok. A plain close() is insufficient.
+   * The native event pump may have received both auth updates before this call.
+   */
+  public void awaitLogoutClosed(long timeoutSeconds) throws Exception {
+    try { logoutClosed.get(timeoutSeconds, TimeUnit.SECONDS); }
+    catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw interrupted;
+    }
+  }
+
   public static JSONObject cmd(String name) {
     JSONObject req = new JSONObject();
     try { req.put("@type", name); } catch (Exception e) { throw new IllegalStateException(e); }
