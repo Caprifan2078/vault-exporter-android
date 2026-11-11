@@ -17,6 +17,14 @@ def adb(*args, timeout=90):
     ).decode("utf-8", "replace")
 
 
+def process_pid():
+    # pidof exits with code 1 when the stopped app has no process.
+    try:
+        return adb("shell", "pidof", PACKAGE).strip()
+    except subprocess.CalledProcessError:
+        return ""
+
+
 def phase(name):
     result = adb("shell", "am", "instrument", "-w", "-r",
                  "-e", "phase", name, COMPONENT, timeout=110)
@@ -40,12 +48,12 @@ launch = adb("shell", "am", "start", "-W", "-n",
              PACKAGE + "/org.vault.exporter.MainActivity")
 if "Error" in launch or "Exception" in launch:
     raise RuntimeError(f"Android QA app relaunch failed:\n{launch}")
-pid = adb("shell", "pidof", PACKAGE).strip()
+pid = process_pid()
 if not pid:
     raise RuntimeError("QA app was not alive before force-stop")
 adb("shell", "am", "force-stop", PACKAGE)
 time.sleep(1)
-if adb("shell", "pidof", PACKAGE).strip():
+if process_pid():
     raise RuntimeError("Android process remained alive after force-stop")
 phase("verify")
 print("PASS: hardware-backed-or-software-emulated AndroidKeyStore recovery, "
