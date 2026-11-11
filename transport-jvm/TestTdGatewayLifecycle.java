@@ -145,7 +145,35 @@ public final class TestTdGatewayLifecycle {
       check(released,"Receiver not released after close confirmation");
       TdNative.autoClose=true;
       TdGateway afterClose=new TdGateway(event->{});afterClose.stop();
-      System.out.println("PASS: cancellations, timeout, interrupt preservation, ordered concurrent shutdown and no pending leaks (fake TDLib)");
+
+      // A graceful native close is NOT proof that Telegram revoked the session.
+      TdGateway plainClose=new TdGateway(event->{});
+      plainClose.stop();
+      boolean plainRejected=false;
+      try {plainClose.awaitLogoutClosed(2);}
+      catch(ExecutionException | TimeoutException expected){plainRejected=true;}
+      check(plainRejected,"Plain native close was falsely accepted as Telegram logout");
+
+      // Even LoggingOut by itself must not clear the Android Keystore: wait
+      // for Closed on the SAME TDLib client, and retain completion if the
+      // final state arrives before the caller starts waiting.
+      TdGateway logout=new TdGateway(event->{});
+      long logoutClient=TdNative.nextClient.get()-1;
+      TdNative.inbound.add(new JSONObject().put("@client_id",logoutClient)
+          .put("@type","updateAuthorizationState")
+          .put("authorization_state",new JSONObject()
+              .put("@type","authorizationStateLoggingOut")).toString());
+      Future<?> pendingLogout=pool.submit(()-> {
+        try{logout.awaitLogoutClosed(4);}
+        catch(Exception e){throw new RuntimeException(e);}
+      });
+      Thread.sleep(120);
+      check(!pendingLogout.isDone(),"LoggingOut alone was accepted as complete logout");
+      TdNative.closed(logoutClient);
+      pendingLogout.get(2,TimeUnit.SECONDS);
+      logout.awaitLogoutClosed(0); // Already delivered Closed event stays confirmed.
+      System.out.println("PASS: cancellations, timeout, interrupt preservation, ordered concurrent shutdown, " +
+        "no pending leaks, and verified LoggingOut-to-Closed lifecycle (fake TDLib)");
     } finally {gw.stop();pool.shutdownNow();}
   }
 }
