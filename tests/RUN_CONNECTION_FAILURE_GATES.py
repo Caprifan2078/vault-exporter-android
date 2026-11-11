@@ -45,4 +45,14 @@ assert stop.index("closing=true;") < stop.index('TdNative.send(client,')
 assert "if (closeConfirmed) TdNative.releaseReceiver();" in gateway
 assert 'if(ex instanceof InterruptedException) Thread.currentThread().interrupt();' in gateway
 
-print("PASS: clean TDLib startup rollback, one-time API credentials, serialized shutdown, interrupt propagation")
+# An acknowledgement of logOut is not the terminal authorization-state update.
+logout = between(activity, 'private void confirmLogout()', 'private static void erasePrivateTree')
+assert 'JSONObject logoutAck=td.await(TdGateway.cmd("logOut"),120);' in logout
+assert 'td.awaitLogoutClosed(120);' in logout
+assert logout.index('td.awaitLogoutClosed(120);') < logout.index('telegramLogoutConfirmed=true;')
+assert logout.index('telegramLogoutConfirmed=true;') < logout.index('new SessionSecrets(this).discard();')
+assert 'if (logoutObserved) logoutClosed.complete(null);' in gateway
+assert '"authorizationStateLoggingOut".equals(state)' in gateway
+assert 'logoutClosed.completeExceptionally' in gateway, "A plain close must not count as logout"
+
+print("PASS: clean TDLib startup rollback, credentials, serialized shutdown, interrupt and confirmed logout lifecycle")
