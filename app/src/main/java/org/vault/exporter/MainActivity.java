@@ -1101,8 +1101,14 @@ public final class MainActivity extends Activity {
         worker.execute(()-> {
           boolean telegramLogoutConfirmed=false;
           try{
-            // Never destroy an incomplete export BEFORE Telegram confirms logout.
-            td.await(TdGateway.cmd("logOut"),120);
+            // logOut returns Ok when the request is accepted, but account
+            // authorization can still be LoggingOut/Closing. Never delete
+            // database encryption keys until TDLib reports the actual
+            // LoggingOut -> Closed lifecycle, not an unrelated close().
+            JSONObject logoutAck=td.await(TdGateway.cmd("logOut"),120);
+            if(!"ok".equals(logoutAck.optString("@type")))
+              throw new IOException("TDLib не подтвердила запрос выхода");
+            td.awaitLogoutClosed(120);
             telegramLogoutConfirmed=true;
             File progressDir=new File(getFilesDir(),"export-progress");
             File[] chats=progressDir.listFiles();
