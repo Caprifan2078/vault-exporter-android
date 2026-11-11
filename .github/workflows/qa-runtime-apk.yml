@@ -8,6 +8,7 @@ on:
       - 'tests/RUN_RUNTIME_QA_BUILD_GATES.py'
       - 'ci/synthetic-offline-apk-smoke.sh'
       - 'ci/qa-runtime-native-probe.py'
+      - 'ci/qa-keystore-force-stop-probe.py'
       - 'scripts/prepare_tdlib_android.py'
       - 'scripts/verify_tdlib_elf.py'
 permissions:
@@ -112,6 +113,33 @@ jobs:
           path: dist/
           retention-days: 1
 
+      # The Android instrumentation lives in a SEPARATE APK, excluded from
+      # regular QA, debug and release installations. It uses no real account.
+      - name: Build isolated Android Keystore recovery instrumentation APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          # QA runtime application above already passed verifyExporterBuild.
+          # This task builds only the matching signed test-package APK.
+          gradle --no-daemon -PtelegramEnvironment=production \
+            -PapproveProductionBuild=true :app:assembleQaRuntimeAndroidTest \
+            -x :app:verifyExporterBuild
+          TEST_APK=$(find app/build/outputs/apk/androidTest -type f -name '*.apk' -print -quit)
+          test -n "$TEST_APK" && test -s "$TEST_APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)
+          "$AAPT" dump badging "$TEST_APK" | grep -F "package: name='org.vault.exporter.runtimeqa.test'"
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
+          "$SIGNER" verify "$TEST_APK"
+          mkdir -p keystore-test-dist
+          cp "$TEST_APK" keystore-test-dist/VaultExporter-ANDROID-KEYSTORE-TEST.apk
+          (cd keystore-test-dist && sha256sum *.apk > SHA256SUMS.txt)
+      - name: Upload isolated instrumentation for 1 day
+        uses: actions/upload-artifact@v4
+        with:
+          name: VAULT-ANDROID-KEYSTORE-QA-TEST
+          path: keystore-test-dist/
+          retention-days: 1
+
       - name: Build isolated synthetic-export APK without credentials
         shell: bash
         run: |
@@ -145,6 +173,13 @@ jobs:
           path: qa-apk
       - name: Verify APK checksum
         run: cd qa-apk && sha256sum -c SHA256SUMS.txt
+      - name: Download Keystore crash-recovery instrumentation
+        uses: actions/download-artifact@v4
+        with:
+          name: VAULT-ANDROID-KEYSTORE-QA-TEST
+          path: keystore-test-apk
+      - name: Validate Keystore test APK checksum
+        run: cd keystore-test-apk && sha256sum -c SHA256SUMS.txt
       - name: Enable KVM when available
         run: |
           if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; else echo 'KVM unavailable'; fi
@@ -164,7 +199,9 @@ jobs:
             adb shell am start -W -n org.vault.exporter.runtimeqa/org.vault.exporter.MainActivity &&
             adb shell pidof org.vault.exporter.runtimeqa &&
             adb shell dumpsys activity activities | grep -F 'org.vault.exporter.runtimeqa' &&
-            python3 ci/qa-runtime-native-probe.py
+            python3 ci/qa-runtime-native-probe.py &&
+            adb install -r keystore-test-apk/VaultExporter-ANDROID-KEYSTORE-TEST.apk &&
+            python3 ci/qa-keystore-force-stop-probe.py
 
   offline-synthetic-export:
     needs: runtime-apk
