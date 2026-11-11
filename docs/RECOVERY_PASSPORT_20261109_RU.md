@@ -188,3 +188,21 @@ P0: дождаться _результата CI, а не предполагат�
 - [ ] 20 Независимый security/privacy review, стабильная release-подпись и release acceptance
 
 **Следующее действие:** проверить два jobs CI `42726725734` (последний код ExportEngine + регрессионные тесты) и три jobs source-built APK `42727099985`. Не засчитывать 03,04,14 до успеха полного Android-emulator CI. Эти проценты строго привязаны к неизменному перечню 01–20 и не могут заменять реальный итоговый E2E.
+
+## Проверка результатов прерванной итерации — 11 ноября 2026
+
+Подтверждено повторным чтением GitHub Actions, а не предположениями:
+- CI по последнему функциональному коду: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/42726725734 — **success**, Android compile и полный набор JVM/статических регрессий, включая потерю `remote.unique_id` и безопасное продолжение.
+- Полная native QA APK проверка: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/42727099985, SHA исходников `c0752b8e110887526b393a74b0337e405dbecf0f` — **все три jobs success**: `runtime-apk`, `offline-emulator-smoke`, `offline-synthetic-export`.
+- В логе `offline-emulator-smoke` присутствует: `PASS: three offline TDLib diagnostics including real Android process force-stop/relaunch, no account`. Это **реальный Android emulator force-stop/relaunch** без аккаунта, но НЕ тест сохранения сессии/Keystore и НЕ SIGKILL во время активного экспорта.
+- В логе `offline-synthetic-export` присутствует: `PASS: emulator created fictional ZIP with 60 messages and 7 media, no Telegram network`; файл был создан, прочитан и проверен в эмуляторе.
+- Сравнение `c0752b8e1108..qa/recovery-audit-20261109` на момент проверки: 1 дополнительный коммит, изменён только **этот Markdown-паспорт**. Следовательно APK CI охватывает весь текущий функциональный код; обновления паспорта не требуют пересборки TDLib.
+
+### Обновлённая постоянная матрица — ровно те же 20 пунктов
+- **Было:** 11/20 = 55% QA-контрольного списка.
+- **Теперь:** 14/20 = **70% QA-контрольного списка**, изменение **+3 закрытых пункта / +15 процентных пунктов**.
+- Переведены в [x] пункты **03** (сборка official TDLib и подписанного QA APK), **04** (Android offline synthetic export), **14** (force-stop/relaunch native TDLib без аккаунта). Все — зафиксированные результаты CI `42727099985`.
+- Всё ещё [ ]: **15** Android Keystore/session recovery при убийстве процесса + очистка orphan файлов на эмуляторе/телефоне, **16** живой тестовый Telegram login/2FA/logout, **17** реальный end-to-end сообщений и медиа, **18** долгий Android background/doze/storage тест, **19** TVA в Viewer, **20** независимый security review, постоянная подпись и release acceptance.
+- **Важно:** 70% — НЕ объективная продуктовая готовность, не доказанная безопасность и не повод использовать основную переписку. При прохождении новых пунктов прибавлять по 5 процентных пунктов, не изменяя задним числом список. Текущая версия остается `0.9-test-gated-alpha`, `main` неизменён, PR #4 остаётся draft.
+- Продолжать с пункта **15**: в APK/эмуляторе протестировать именно Android Keystore + восстановление зашифрованной checkpoint-пары и очистку остаточного TDLib cache после внезапной остановки; не подменять его уже проверенным cold restart без авторизации.
+
