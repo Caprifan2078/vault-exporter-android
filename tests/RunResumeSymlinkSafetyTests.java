@@ -99,6 +99,18 @@ public final class RunResumeSymlinkSafetyTests {
     // Old lock survives erase and kernel lock is correctly released on close.
     try(ResumeStore reopened=new ResumeStore(root.toFile(),901,key)){
       ok(reopened.state().chatId==901,"Cannot reopen after safe erase");
+      // An app-private directory could be swapped after the process acquired
+      // its per-chat lock. Neither read nor erase may follow the replacement.
+      Path original=root.resolve("chat-901");
+      Path moved=root.resolve("chat-901-moved");
+      Files.move(original,moved);
+      Files.createSymbolicLink(original,outside);
+      rejects(reopened::state,"Post-open chat-root symlink used for checkpoint read");
+      rejects(reopened::erase,"Post-open chat-root symlink used for erase");
+      ok(Files.isRegularFile(victim),"Post-open root swap touched outside file");
+      Files.delete(original);
+      Files.move(moved,original);
+      ok(reopened.state().chatId==901,"Restored safe staging root cannot be read");
     }
     ok(Arrays.equals("never change".getBytes(StandardCharsets.UTF_8),
         Files.readAllBytes(victim)),"Outside file changed during symlink tests");
