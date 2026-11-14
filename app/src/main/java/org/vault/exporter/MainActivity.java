@@ -613,6 +613,7 @@ public final class MainActivity extends Activity {
     }
   }
   private void askBeforeConnect() {
+    if(logoutRequested){showStatus("Дождись завершения выхода из Telegram.");return;}
     if(BuildConfig.TELEGRAM_TEST_DC){
       showStatus("Учебная сборка не подключается к Telegram. Используй вымышленный чат.");
       return;
@@ -683,6 +684,7 @@ public final class MainActivity extends Activity {
       }).show();
   }
   private void beginConnect() {
+    if (logoutRequested){showStatus("Дождись завершения выхода из Telegram.");return;}
     if (BuildConfig.DEBUG) { showStatus("В демонстрационной сборке подключение запрещено."); return; }
     if (BuildConfig.QA_RUNTIME && (qaApiId <= 1 || qaApiHash.length() != 32)) {
       showStatus("Нельзя подключиться без собственных API-ключей тестового приложения.");
@@ -783,6 +785,10 @@ public final class MainActivity extends Activity {
     }
     runOnUiThread(() -> {
       if (exporting) return;
+      // Late authorization updates must not resurrect the old chat/picker
+      // while the confirmed-logout cleanup is still in progress.
+      if (logoutRequested && !"authorizationStateLoggingOut".equals(name)
+          && !"authorizationStateClosed".equals(name)) return;
       clearUi();
       switch(name) {
         case "authorizationStateWaitPhoneNumber": authInput("Номер телефона в международном формате", "Номер +…", false, "Продолжить",
@@ -798,9 +804,21 @@ public final class MainActivity extends Activity {
         case "authorizationStateReady": showStatus("Подключено напрямую к Telegram. Выбери переписку."); showReady(); break;
         case "authorizationStateLoggingOut": showStatus("Завершаем только сеанс экспортёра…"); break;
         case "authorizationStateClosed":
-          // Never erase the resumable archive here: a network-confirmed logout result
-          // and an explicit cleanup path are required, even if this event arrives early.
-          showStatus(logoutRequested ? "Telegram подтвердил закрытие сеанса. Завершаем очистку…" : "Соединение закрыто.");
+          // A TDLib client can close unexpectedly. Release the stale reference
+          // without touching Keystore or encrypted staging; the native reader
+          // releases its receiver reservation after processing Closed.
+          if (!logoutRequested) {
+            td=null;
+            initializing.set(false);
+            qaApiId=0;
+            qaApiHash="";
+            selectedChatId=0;
+            selectedChatTitle="";
+            showStatus("TDLib закрылась. Зашифрованный прогресс сохранён. Можно подключиться повторно.");
+            button("Вернуться к подключению",this::showWelcome);
+          } else {
+            showStatus("Telegram подтвердил закрытие сеанса. Завершаем очистку…");
+          }
           break;
         default: message("Telegram запросил дополнительный способ входа: "+name+". Пока этот этап не поддержан.");
       }
@@ -837,6 +855,8 @@ public final class MainActivity extends Activity {
     button("Если загрузка не удалась: удалить её прогресс",this::confirmResetProgress);
   }
   private void chooseChat() {
+    if(logoutRequested){showStatus("Выход из Telegram ещё выполняется.");return;}
+    if(td==null){showStatus("Клиент TDLib закрыт. Повтори подключение.");return;}
     showStatus("Загружаем список чатов…");
     worker.execute(() -> {
       try {
@@ -1110,6 +1130,12 @@ public final class MainActivity extends Activity {
               throw new IOException("TDLib не подтвердила запрос выхода");
             td.awaitLogoutClosed(120);
             telegramLogoutConfirmed=true;
+            // A confirmed native close is terminal: never keep a stale
+            // TdGateway that would block the next explicit connection.
+            td=null;
+            initializing.set(false);
+            qaApiId=0;
+            qaApiHash="";
             // Once native TDLib has confirmed Closed, no downloader can still
             // write new plaintext. Scrub its dedicated file cache explicitly.
             // Do not rely solely on Telegram/TDLib's unspecified logout cleanup.
