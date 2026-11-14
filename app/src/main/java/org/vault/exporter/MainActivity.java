@@ -19,7 +19,7 @@ import java.util.concurrent.*;
 /** A minimal native Android UI. No browser server, Termux, commands or analytics. */
 public final class MainActivity extends Activity {
   private final ExecutorService worker = Executors.newSingleThreadExecutor();
-  private TdGateway td;
+  private volatile TdGateway td;
   private LinearLayout root, interactive;
   private TextView status, selected;
   private long selectedChatId = 0;
@@ -27,6 +27,9 @@ public final class MainActivity extends Activity {
   private boolean exporting = false;
   private volatile boolean logoutRequested = false;
   private final java.util.concurrent.atomic.AtomicBoolean initializing = new java.util.concurrent.atomic.AtomicBoolean(false);
+  // UI confirmations can overlap while TDLib client creation is queued.
+  // A separate gate prevents two workers from racing the global receiver.
+  private final java.util.concurrent.atomic.AtomicBoolean connectionStarting = new java.util.concurrent.atomic.AtomicBoolean(false);
   private final java.util.concurrent.atomic.AtomicBoolean nativeProbeRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
   // QA only: never ask for a phone number until native TDLib has passed a local self-check.
   private volatile boolean nativeProbePassed = false;
@@ -694,6 +697,9 @@ public final class MainActivity extends Activity {
       showStatus("Вход не запущен: сперва необходима успешная офлайн-проверка TDLib.");
       return;
     }
+    if(td!=null || !connectionStarting.compareAndSet(false,true)) {
+      showStatus("Подключение TDLib уже выполняется.");return;
+    }
     clearUi(); message("Соединяемся с " + (BuildConfig.TELEGRAM_TEST_DC ? "тестовым Telegram" : "основным Telegram") + "…");
     showStatus("Инициализация TDLib по вашему запросу…");
     worker.execute(() -> {
@@ -709,6 +715,8 @@ public final class MainActivity extends Activity {
         // A failed initialization must not leave a half-open TDLib client.
         // Otherwise the UI says "already connected" and retry is impossible.
         abandonFailedConnection("Подключение TDLib не удалось. Сеанс не подтверждён.");
+      } finally {
+        connectionStarting.set(false);
       }
     });
   }
@@ -717,6 +725,7 @@ public final class MainActivity extends Activity {
   private void abandonFailedConnection(String reason) {
     TdGateway abandoned=td;
     td=null;
+    connectionStarting.set(false);
     initializing.set(false);
     qaApiId=0;
     qaApiHash="";
@@ -809,6 +818,7 @@ public final class MainActivity extends Activity {
           // releases its receiver reservation after processing Closed.
           if (!logoutRequested) {
             td=null;
+            connectionStarting.set(false);
             initializing.set(false);
             qaApiId=0;
             qaApiHash="";
@@ -1133,6 +1143,7 @@ public final class MainActivity extends Activity {
             // A confirmed native close is terminal: never keep a stale
             // TdGateway that would block the next explicit connection.
             td=null;
+            connectionStarting.set(false);
             initializing.set(false);
             qaApiId=0;
             qaApiHash="";
