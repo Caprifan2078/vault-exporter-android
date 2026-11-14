@@ -286,3 +286,23 @@ P0: дождаться _результата CI, а не предполагат�
 - **Последняя полная APK+два эмулятора:** https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43649098500 — пока собирает pinned TDLib, не заявлять успешный APK на последнем коде.
 - QA матрица **15/20 = 75%**, прирост за эту итерацию **+0 задач / +0 процентных пунктов**. Ни одно исправление UI не закрывает без подмены №16–20, реальный Telegram не тестировали, нет независимого security review.
 - PR #4 остаётся draft; `main` не трогать. Следующий checkpoint: проверить 43649132495, затем 43649098500; при failed-step — изучить логи, исправить и повторить только необходимые тесты.
+
+## Итерация 15 ноября 2026 — безопасность путей encrypted ResumeStore
+
+**Реальный дефект в коде до правки:** ResumeStore.erase использовал File.listFiles и File.isDirectory, потенциально переходил по symlink при удалении зашифрованных данных и мог затронуть внешние файлы. Это потенциальный дефект границ приватного хранилища, не подтвержденная утечка реальных чатов.
+
+**Production:**
+- 4b1f2729078fc9b4aa340f0f7176c791411ae244 — erase с Files.walkFileTree без следования по ссылкам, строгая ошибка при ссылке/аномальном типе. Проверка symlink для chat root, locks directory/file и каждого компонента staging read/write path.
+- b5610a469cb476f7d24f9aae265026695283253c — запрет symlink самого export-progress root до getCanonicalFile.
+- 3e5e6edd76f5dcf8335cf0947fc282a2cdcb0a32 — запрет подмены chat root после создания ResumeStore, при каждом доступе к staging path.
+- Все изменения в QA-ветке, главный main не трогать.
+
+**Tests:** RunResumeSymlinkSafetyTests (9b1f815a), включён в RUN_TESTS_OFFLINE.sh (b2ba2fd), проверяет все корни/locks/media directories, read/write/erase/restore и сохранность внешнего fixture файла. Поправки тестовой фикстуры cba0e5cd, 71f55d2d, d6143f19; первые промежуточные CI падали на повторное создание существующего фиктивного lock-файла, а не на целевое поведение приложения.
+
+**Верификация:**
+- Предыдущий исходный код + первоначальные негативные тесты: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43650135760 — оба jobs SUCCESS.
+- Последние source + tests: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43650338128 — выполняется при внесении этого checkpoint, не считать SUCCESS до завершения.
+- Полный native APK + offline emulator: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43650313722 — ещё в сборке pinned TDLib, не объявлять успех до всех jobs.
+- Предварительная проверка символьных ссылок не является абсолютной защитой от TOCTOU внутри враждебного процесса того же Android UID; ограничение фиксируется для независимого security review.
+
+**QA-матрица: 15/20 = 75%**, прибавка за итерацию 0 закрытых пунктов. Открыты живой test-account auth, live export E2E, физический Android фон/Doze/storage, Viewer .tva import, независимый audit/signing/release acceptance. Нет реальных Telegram логинов, релиза или merge main. PR #4 остаётся draft.
