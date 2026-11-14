@@ -82,6 +82,9 @@ public final class RunResumeSymlinkSafetyTests {
       ok(Files.isRegularFile(victim),"Erase followed a symlink outside app");
       Files.delete(pages);
 
+      // No-follow erasure can stop on the symlink before or after visiting
+      // ordinary files; do not rely on filesystem enumeration order.
+      Files.deleteIfExists(root.resolve("chat-901/checkpoint.enc"));
       // Even a file symlink inside a normal directory must not be read.
       Files.createSymbolicLink(root.resolve("chat-901/checkpoint.enc"),victim);
       rejects(stage::state,"Staging checkpoint file symlink was accepted");
