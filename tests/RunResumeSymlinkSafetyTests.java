@@ -33,6 +33,15 @@ public final class RunResumeSymlinkSafetyTests {
     Path root=workspace.resolve("export-progress");
     Files.createDirectories(root);
 
+    // A redirected export-progress leaf must never be canonicalized into
+    // somebody else's directory before validating its target.
+    Path redirected=workspace.resolve("redirected-export-progress");
+    Files.createSymbolicLink(redirected,outside);
+    rejects(()->{try(ResumeStore stage=new ResumeStore(redirected.toFile(),902,key)){}},
+        "Symlinked entire export-progress directory was accepted");
+    ok(Files.isRegularFile(victim),"Export-progress root symlink escaped sandbox");
+    Files.delete(redirected);
+
     // Do not resolve a preexisting chat directory symlink before checking it.
     Files.createSymbolicLink(root.resolve("chat-901"),outside);
     rejects(()->{try(ResumeStore stage=new ResumeStore(root.toFile(),901,key)){}},
