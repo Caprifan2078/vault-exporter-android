@@ -306,3 +306,21 @@ P0: дождаться _результата CI, а не предполагат�
 - Предварительная проверка символьных ссылок не является абсолютной защитой от TOCTOU внутри враждебного процесса того же Android UID; ограничение фиксируется для независимого security review.
 
 **QA-матрица: 15/20 = 75%**, прибавка за итерацию 0 закрытых пунктов. Открыты живой test-account auth, live export E2E, физический Android фон/Doze/storage, Viewer .tva import, независимый audit/signing/release acceptance. Нет реальных Telegram логинов, релиза или merge main. PR #4 остаётся draft.
+
+## Итерация 15 ноября 2026 — проверяемый TDLib native cache + контракт TVA1
+
+**Главная проблема процесса разработки**: полная сборка pinned official TDLib JSON из исходников для каждого изменения Java-кода заново компилировала весь Android native stack, часто отменялась следующими QA-правками и мешала получить итоговую реальную APK-приёмку. Не заменять официальный источник неаудированным сторонним бинарником.
+
+**Сделано:**
+- `scripts/verify_tdlib_cache.py` — fail-closed метаданные с exact official TDLib commit `ea3f69ce11aef458bfbb09869b809ede4447486f`, arm64/API26 target, SHA-256 всего `libtdjson.so`, размером и SHA-256 ключевых скриптов сборки/ELF проверки.
+- `tests/RUN_TDLIB_CACHE_TESTS.py` — негативные фикстуры: порча бинарника, неверный SHA upstream, ABI, изменение рецепта, malformed JSON, подмена пути ссылки. Запущены внутри `RUN_BUILD_SAFETY_TESTS.py`.
+- `.github/workflows/qa-runtime-apk.yml` — `actions/cache@v4` с ключом, зависящим от TDLib pin и хешей recipe/verification. Cache MISS: обязателен исходный clone, checkout exact commit, Docker build (official), `verify_tdlib_elf.py`, сохранение кеша с метаданными. Cache HIT: обязательная проверка PIN + manifest + SHA256 + recipe + fresh `verify_tdlib_elf.py` перед упаковкой в QA APK. Cached package NEVER contains APK, credentials или Telegram data. Cache corruption должен останавливать build, не молча перескакивать на другой бинарник.
+- `ci-contract/verify_ci_contract.py` проверяет сам cache workflow и недопустимость обхода native-ABI в будущем.
+- `docs/TVA1_VIEWER_INTEROPERABILITY.md` — описание binary TVA1: PBKDF2-HMAC-SHA256, AES-GCM, chunk header/nonce/AAD, ZIP порядок, media-index и ограничения Viewer. **Это документация для будущей интеграции, не работающий TVA-import**.
+
+**Ключевые коммиты:** `9141c550e1e89d903ab9ea068a8af9f3e4411cb0` cache guard, `34ce3854087418676586eed32e4cb289d4066ef5` negative tests, `939581a1d317205e076ccf2a3ac98f3c570cca84` suite hook, `434cd446c9bd3a6a6c73e96c1ba5d35a65bb4da7` build workflow, `bc3a84c95c02908051c630acb87a8fbd0112a880` CI contracts, `1e2f1ca8638cf59fe46c49f897c744ec99eb30bc` TVA spec.
+
+**Проверка:** https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43651452974 — **оба jobs SUCCESS** (static/JVM + Android Java compile), включает replay негативных cache tests.
+https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43651342835 — **ещё выполняет первую native TDLib сборку с новым cache на последней модификации runtime workflow**, не объявлять APK/emulator success и НЕ обещать экономию времени как измеренную до подтверждённого cache HIT на следующей сборке. Конкретное ограничение: источник upstream компилируется при первом MISS; cache проверяет целостность, не является независимой reproducible-build подписью.
+
+**Метрика:** 15/20 = 75% QA, **+0 новых закрытых пунктов**. №16 live test account, №17 live messages/media E2E, №18 long physical-device background/doze, №19 actual Viewer TVA import и №20 independent security/signing/acceptance по-прежнему не закрыты. Показатель QA не равен release-готовности. `main` не менять, PR #4 оставить draft, никаких настоящих учётных данных в CI.
