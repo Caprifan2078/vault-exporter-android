@@ -301,7 +301,7 @@ P0: дождаться _результата CI, а не предполагат�
 
 **Верификация:**
 - Предыдущий исходный код + первоначальные негативные тесты: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43650135760 — оба jobs SUCCESS.
-- Последние source + tests: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43650338128 — выполняется при внесении этого checkpoint, не считать SUCCESS до завершения.
+- Последние source + tests: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43650338128 — **оба jobs SUCCESS**: строгий JVM тест символьных ссылок (включая подмену корня после открытия) и компиляция Android, включая отдельный QA instrumentation.
 - Полный native APK + offline emulator: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43650313722 — ещё в сборке pinned TDLib, не объявлять успех до всех jobs.
 - Предварительная проверка символьных ссылок не является абсолютной защитой от TOCTOU внутри враждебного процесса того же Android UID; ограничение фиксируется для независимого security review.
 
