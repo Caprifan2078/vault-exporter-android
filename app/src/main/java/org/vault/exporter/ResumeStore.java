@@ -61,6 +61,10 @@ public final class ResumeStore implements Closeable {
   public ResumeStore(File privateDir, long chatId, byte[] sessionSecret) throws Exception {
     if (chatId == 0 || sessionSecret == null || sessionSecret.length != 32) throw new IllegalArgumentException("Неправильный ключ или чат");
     this.chatId=chatId;
+    // Reject a redirected "export-progress" root before canonicalization hides
+    // the symlink. Android's /data/user path alias is not the leaf itself.
+    if(Files.isSymbolicLink(privateDir.toPath()))
+      throw new IOException("Unsafe export progress root");
     File privateRoot=privateDir.getCanonicalFile();
     if(!privateRoot.isDirectory() && !privateRoot.mkdirs())
       throw new IOException("Не удалось создать закрытый каталог экспорта");
