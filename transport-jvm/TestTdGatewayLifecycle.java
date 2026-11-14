@@ -21,6 +21,7 @@ public final class TestTdGatewayLifecycle {
     TdNative.flush();
     ExecutorService pool=Executors.newCachedThreadPool();
     TdGateway gw=new TdGateway(event->{});
+    check(!gw.isClosed(),"New TDLib gateway is already marked closed");
     // This directory models a plaintext download left behind after SIGKILL.
     java.nio.file.Path appFiles=java.nio.file.Files.createTempDirectory("vault-gateway-cache-");
     java.nio.file.Path orphan=appFiles.resolve("tdlib/files/voice.ogg");
@@ -110,6 +111,7 @@ public final class TestTdGatewayLifecycle {
       sending.get(3,TimeUnit.SECONDS);
       stopping.get(3,TimeUnit.SECONDS);
       check(active.get()!=null && active.get().isCancelled(),"Stop did not cancel concurrent inflight request");
+      check(gw.isClosed(),"Stopped native client still reports usable");
       check(pending(gw).isEmpty(),"Stop leaked concurrent request");
       JSONObject firstSent=new JSONObject(TdNative.outbound.poll(2,TimeUnit.SECONDS));
       JSONObject lastSent=new JSONObject(TdNative.outbound.poll(2,TimeUnit.SECONDS));
@@ -171,6 +173,7 @@ public final class TestTdGatewayLifecycle {
       check(!pendingLogout.isDone(),"LoggingOut alone was accepted as complete logout");
       TdNative.closed(logoutClient);
       pendingLogout.get(2,TimeUnit.SECONDS);
+      check(logout.isClosed(),"AuthorizationStateClosed did not make gateway unusable");
       logout.awaitLogoutClosed(0); // Already delivered Closed event stays confirmed.
       System.out.println("PASS: cancellations, timeout, interrupt preservation, ordered concurrent shutdown, " +
         "no pending leaks, and verified LoggingOut-to-Closed lifecycle (fake TDLib)");
