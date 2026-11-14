@@ -213,6 +213,10 @@ public final class ResumeStore implements Closeable {
   private File path(String name) {
     if(name.startsWith("/") || name.contains("..") || name.contains("\\") || name.indexOf('\0')!=-1)
       throw new IllegalArgumentException("Unsafe staging path");
+    // A chat root replaced AFTER this store acquired its lock must not
+    // redirect even an ordinary checkpoint read outside private storage.
+    if(Files.isSymbolicLink(root.toPath()))
+      throw new IllegalStateException("Unsafe symlinked chat staging root");
     // A manipulated media/pages directory can redirect otherwise-valid
     // encrypted writes or reads outside this private chat directory.
     Path cursor=root.toPath();
