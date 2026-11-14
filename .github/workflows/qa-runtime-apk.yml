@@ -11,6 +11,8 @@ on:
       - 'ci/qa-keystore-force-stop-probe.py'
       - 'scripts/prepare_tdlib_android.py'
       - 'scripts/verify_tdlib_elf.py'
+      - 'scripts/verify_tdlib_cache.py'
+      - 'tests/RUN_TDLIB_CACHE_TESTS.py'
 permissions:
   contents: read
   actions: read
@@ -39,30 +41,54 @@ jobs:
           python3 tests/RUN_QA_PRODUCTION_SAFETY_TESTS.py
           python3 tests/RUN_RUNTIME_QA_BUILD_GATES.py
           python3 ci-contract/verify_ci_contract.py
-      # The previous run-id 41440702889 artifact expires 2026-11-09.
-      # Build from the exact upstream commit rather than from an expiring APK.
-      - name: Build pinned official TDLib JSON for ARM64 from source
+      # A pinned upstream build is deterministic with a fixed recipe/target.
+      # Cache only the checked native .so, NEVER an installable APK or credentials.
+      # The key rotates when the source pin or any verification/recipe code changes.
+      - name: Restore reviewed TDLib native binary cache
+        id: tdlib-cache
+        uses: actions/cache@v4
+        with:
+          path: native-cache
+          key: tdlib-json-arm64-api26-ea3f69ce11aef458bfbb09869b809ede4447486f-v1-${{ hashFiles('scripts/prepare_tdlib_android.py', 'scripts/verify_tdlib_elf.py', 'scripts/verify_tdlib_cache.py') }}
+      - name: Build or verify pinned official TDLib JSON for ARM64
         shell: bash
         run: |
           set -euo pipefail
           SRC=ea3f69ce11aef458bfbb09869b809ede4447486f
-          git clone --filter=blob:none --no-checkout https://github.com/tdlib/td.git official-tdlib-src
-          git -C official-tdlib-src checkout --detach "$SRC"
-          test "$(git -C official-tdlib-src rev-parse HEAD)" = "$SRC"
-          python3 scripts/prepare_tdlib_android.py official-tdlib-src/example/android/Dockerfile
-          mkdir -p native-output
-          (cd official-tdlib-src/example/android && DOCKER_BUILDKIT=1 docker build \
-            --build-arg "COMMIT_HASH=$SRC" \
-            --build-arg 'TDLIB_INTERFACE=JSON' \
-            --output "type=local,dest=$GITHUB_WORKSPACE/native-output" .)
-          ZIP=$(find native-output -type f -name 'tdlib.zip' -print -quit)
-          test -n "$ZIP" && test -s "$ZIP"
-          mkdir -p native-files
-          unzip -q "$ZIP" -d native-files
-          SO=$(find native-files -type f -path '*/arm64-v8a/libtdjson.so' -print -quit)
-          test -n "$SO" && test -s "$SO"
-          python3 scripts/verify_tdlib_elf.py "$SO"
-          install -D -m 0644 "$SO" app/src/main/jniLibs/arm64-v8a/libtdjson.so
+          test "$SRC" = "$(python3 -c 'from scripts.verify_tdlib_cache import UPSTREAM; print(UPSTREAM)')"
+          mkdir -p native-cache
+          if [ "${{ steps.tdlib-cache.outputs.cache-hit }}" = 'true' ]; then
+            echo 'Reusing cached TDLib only after strict metadata + binary verification'
+            python3 scripts/verify_tdlib_cache.py check \
+              native-cache/libtdjson.so native-cache/manifest.json
+          else
+            echo 'No exact validated cache: building official pinned upstream TDLib'
+            git clone --filter=blob:none --no-checkout https://github.com/tdlib/td.git official-tdlib-src
+            git -C official-tdlib-src checkout --detach "$SRC"
+            test "$(git -C official-tdlib-src rev-parse HEAD)" = "$SRC"
+            python3 scripts/prepare_tdlib_android.py official-tdlib-src/example/android/Dockerfile
+            mkdir -p native-output
+            (cd official-tdlib-src/example/android && DOCKER_BUILDKIT=1 docker build \
+              --build-arg "COMMIT_HASH=$SRC" \
+              --build-arg 'TDLIB_INTERFACE=JSON' \
+              --output "type=local,dest=$GITHUB_WORKSPACE/native-output" .)
+            ZIP=$(find native-output -type f -name 'tdlib.zip' -print -quit)
+            test -n "$ZIP" && test -s "$ZIP"
+            mkdir -p native-files
+            unzip -q "$ZIP" -d native-files
+            SO=$(find native-files -type f -path '*/arm64-v8a/libtdjson.so' -print -quit)
+            test -n "$SO" && test -s "$SO"
+            python3 scripts/verify_tdlib_elf.py "$SO"
+            install -D -m 0644 "$SO" native-cache/libtdjson.so
+            python3 scripts/verify_tdlib_cache.py create \
+              native-cache/libtdjson.so native-cache/manifest.json
+          fi
+          # Cache metadata alone is NOT enough: repeat the ABI/ELF and JSON symbol
+          # checks on every run, even a cache hit. Fail closed on any mismatch.
+          python3 scripts/verify_tdlib_cache.py check \
+            native-cache/libtdjson.so native-cache/manifest.json
+          python3 scripts/verify_tdlib_elf.py native-cache/libtdjson.so
+          install -D -m 0644 native-cache/libtdjson.so app/src/main/jniLibs/arm64-v8a/libtdjson.so
           python3 scripts/preflight.py
       - name: Install Android SDK/NDK/CMake
         shell: bash
