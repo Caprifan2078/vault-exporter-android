@@ -75,4 +75,5 @@ assert 'export(exportChatId,out,password)' in activity
 assert 'Arrays.fill(pendingPassphrase' in activity
 assert 'final long resetChatId=selectedChatId;' in activity
 assert '"export-progress"),resetChatId,secret)' in activity
+subprocess.run(['python3',str(ROOT/'tests/RUN_TDLIB_CACHE_TESTS.py')],check=True)
 print('PASS: pinned arm64-only TDLib build gate, ELF ABI negative fixtures, picker password-loss safety')
