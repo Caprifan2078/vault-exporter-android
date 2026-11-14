@@ -31,6 +31,10 @@ for required in ('td=null;', 'initializing.set(false);',
 assert 'new SessionSecrets(this).discard()' not in closed, "Native close is NOT logout"
 assert 'PrivateDataEraser.eraseProgress' not in closed, "Never erase progress on native close"
 assert 'if (logoutRequested){showStatus(' in startup, "Do not start client before logout cleanup"
+assert 'connectionStarting.compareAndSet(false,true)' in startup, "Parallel connect confirmations must be rejected"
+assert 'if(td!=null || !connectionStarting.compareAndSet(false,true))' in startup
+assert 'connectionStarting.set(false);' in startup, "Connection reservation must release on any outcome"
+assert 'connectionStarting.set(false);' in failure, "Failed connection rollback must release startup gate"
 
 assert "abandonFailedConnection(" in startup, "Failed initial getAuthorizationState must release client"
 assert "abandonFailedConnection(" in td_params, "Failed setTdlibParameters must release client"
