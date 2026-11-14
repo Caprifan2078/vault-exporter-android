@@ -18,9 +18,12 @@ choose = section('private void chooseChat()', 'private static char[] extractAndC
 picker = section('private void requestPassphrase()', '@Override protected void onActivityResult')
 result = section('@Override protected void onActivityResult', 'private void confirmResetProgress()')
 reset = section('private void confirmResetProgress()', 'private void confirmLogout()')
+logout = section('private void confirmLogout()', '@Override protected void onDestroy()')
 finish = section('@Override protected void onDestroy()', '\n}')
 
 checks = {
+    'Chat picker blocked while Telegram logout is active': 'if(logoutRequested)' in choose,
+    'Chat picker rejects a closed native client': 'if(td==null)' in choose,
     'Chat list error is not mistaken for end': 'catch(TdGateway.TelegramError e) {if(e.code==404){allLoaded=true;break;}throw e;}' in choose,
     'Truncated list is disclosed to user': 'if(!allLoaded || ids.length()>=500)possiblyIncomplete=true;' in choose and 'Список может быть неполным' in choose,
     'Malformed chat list fails visibly': 'if(ids==null)throw new IOException' in choose,
@@ -31,6 +34,10 @@ checks = {
     'Picker restoration cannot use absent password': 'pendingPassphrase == null' in result,
     'Picker restoration cannot use absent chat ID': 'pendingChatId == 0' in result,
     'Picker cannot export a newly selected chat': 'selectedChatId != pendingChatId' in result,
+    'Export picker rejects dead native gateway': 'if(td==null || td.isClosed())' in picker,
+    'Export failure offers reconnect if native client died': 'if(td==null || td.isClosed())' in result and 'TDLib закрылась; зашифрованный прогресс сохранён.' in result,
+    'Export success warns if native session closed before logout': 'Соединение TDLib закрыто. Архив проверен' in result,
+    'Mid-export failure recovery never deletes encrypted resume': 'PrivateDataEraser.eraseProgress' not in result,
     'Actual export freezes original picker chat': 'final long exportChatId=pendingChatId;' in result,
     'Picker identity cleared when export begins': re.search(r'final long exportChatId=pendingChatId;.*?pendingChatId=0;', result, re.S) is not None,
     'Untrusted document provider placeholder deleted': re.search(r'provider=destination\.getAuthority\(\).*?pendingChatId=0;.*?getContentResolver\(\)\.delete\(destination', result, re.S) is not None,
@@ -38,6 +45,13 @@ checks = {
     'Reset captures target before asynchronous execution': 'final long resetChatId=selectedChatId;' in reset,
     'Reset worker uses frozen target rather than mutable UI state': '"export-progress"),resetChatId,secret)' in reset and '"export-progress"),selectedChatId,secret)' not in reset,
     'No picker password persisted in Bundle': 'savedInstanceState.put' not in picker and 'savedInstanceState.put' not in result,
+    'Export entry rejects logout in progress': 'if(logoutRequested)' in picker,
+    'Picker result rejects export during logout': '|| logoutRequested)' in result,
+    'Reset rejects logout in progress': 'exporting || pendingPassphrase!=null || logoutRequested' in reset,
+    'Logout cannot overlap another logout or picker': 'if(exporting || logoutRequested || pendingPassphrase!=null)return;' in logout,
+    'Late duplicate logout confirmation rejected': 'if(exporting || logoutRequested || pendingPassphrase!=null)return;' in logout.split('.setPositiveButton("Завершить сеанс"')[1],
+    'Logout removes plaintext cache and encrypted progress safely': 'TdCacheStartupCleaner.clean(privateStorage);' in logout and 'PrivateDataEraser.eraseProgress(privateStorage);' in logout,
+    'Logout hides stale chat and export actions': 'if(telegramLogoutConfirmed) runOnUiThread' in logout and 'selectedChatId=0;' in logout and 'clearUi();' in logout,
     'Activity destruction clears pending chat/password': 'pendingChatId=0;' in finish and "Arrays.fill(pendingPassphrase,'\\0')" in finish,
 }
 for name, passed in checks.items():

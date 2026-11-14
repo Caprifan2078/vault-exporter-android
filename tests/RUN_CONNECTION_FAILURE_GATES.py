@@ -20,6 +20,22 @@ failure = between(activity, "private void abandonFailedConnection(", "private in
 startup = between(activity, "private void beginConnect()", "private void abandonFailedConnection(")
 td_params = between(activity, 'if ("authorizationStateWaitTdlibParameters".equals(name))', 'runOnUiThread(() -> {')
 
+assert "td = new TdGateway(this::onTdEvent,getFilesDir());" in startup, "Cache-cleaning TDLib gateway must be used"
+assert gateway.index("TdNative.acquireReceiver()") < gateway.index("TdCacheStartupCleaner.clean(appPrivateFilesDir);") < gateway.index("client = TdNative.createClient();"), "Cache scrub must run only under receiver reservation before native client creation"
+# A closed native client must not block reconnect or erase resumable data.
+closed = between(activity, 'case "authorizationStateClosed":', 'default: message(')
+assert 'if (!logoutRequested)' in closed, "Unexpected native close needs a recovery path"
+for required in ('td=null;', 'initializing.set(false);',
+                 'button("Вернуться к подключению",this::showWelcome)'):
+    assert required in closed, f"Closed TDLib recovery missing: {required}"
+assert 'new SessionSecrets(this).discard()' not in closed, "Native close is NOT logout"
+assert 'PrivateDataEraser.eraseProgress' not in closed, "Never erase progress on native close"
+assert 'if (logoutRequested){showStatus(' in startup, "Do not start client before logout cleanup"
+assert 'connectionStarting.compareAndSet(false,true)' in startup, "Parallel connect confirmations must be rejected"
+assert 'if(td!=null || !connectionStarting.compareAndSet(false,true))' in startup
+assert 'connectionStarting.set(false);' in startup, "Connection reservation must release on any outcome"
+assert 'connectionStarting.set(false);' in failure, "Failed connection rollback must release startup gate"
+
 assert "abandonFailedConnection(" in startup, "Failed initial getAuthorizationState must release client"
 assert "abandonFailedConnection(" in td_params, "Failed setTdlibParameters must release client"
 for token in (
@@ -43,4 +59,17 @@ assert stop.index("closing=true;") < stop.index('TdNative.send(client,')
 assert "if (closeConfirmed) TdNative.releaseReceiver();" in gateway
 assert 'if(ex instanceof InterruptedException) Thread.currentThread().interrupt();' in gateway
 
-print("PASS: clean TDLib startup rollback, one-time API credentials, serialized shutdown, interrupt propagation")
+# An acknowledgement of logOut is not the terminal authorization-state update.
+logout = between(activity, 'private void confirmLogout()', '@Override protected void onDestroy()')
+assert 'JSONObject logoutAck=td.await(TdGateway.cmd("logOut"),120);' in logout
+assert 'td.awaitLogoutClosed(120);' in logout
+assert 'TdCacheStartupCleaner.clean(privateStorage);' in logout, 'Plaintext cache must be scrubbed after logout'
+assert 'PrivateDataEraser.eraseProgress(privateStorage);' in logout, 'Fail-closed progress deletion required'
+assert logout.index('telegramLogoutConfirmed=true;') < logout.index('TdCacheStartupCleaner.clean(privateStorage);') < logout.index('PrivateDataEraser.eraseProgress(privateStorage);')
+assert logout.index('td.awaitLogoutClosed(120);') < logout.index('telegramLogoutConfirmed=true;')
+assert logout.index('telegramLogoutConfirmed=true;') < logout.index('new SessionSecrets(this).discard();')
+assert 'if (logoutObserved) logoutClosed.complete(null);' in gateway
+assert '"authorizationStateLoggingOut".equals(state)' in gateway
+assert 'logoutClosed.completeExceptionally' in gateway, "A plain close must not count as logout"
+
+print("PASS: clean TDLib startup rollback, credentials, serialized shutdown, interrupt and confirmed logout lifecycle")

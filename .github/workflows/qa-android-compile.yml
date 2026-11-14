@@ -1,7 +1,7 @@
 name: QA Android Java compile and regression checks (NO Telegram login)
 on:
   push:
-    branches: [qa/disposable-real-telegram-20261102, qa/security-recovery-20261106, qa/full-audit-20261106]
+    branches: [qa/disposable-real-telegram-20261102, qa/security-recovery-20261106, qa/full-audit-20261106, qa/recovery-audit-20261109]
     paths:
       - '.github/workflows/qa-android-compile.yml'
       - 'app/**'
@@ -80,3 +80,12 @@ jobs:
           test -d app/build/intermediates/javac/qaProduction/compileQaProductionJavaWithJavac/classes
           test ! -e app/build/outputs/apk/qaProduction/app-qaProduction.apk
           echo 'PASS: compile-only. NO installable APK, NO Telegram login.'
+      - name: Compile standalone Android Keystore recovery instrumentation (no APK)
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon -PtelegramEnvironment=production \
+            -PapproveProductionBuild=true \
+            :app:compileQaRuntimeAndroidTestJavaWithJavac \
+            -x :app:verifyExporterBuild
+          echo 'PASS: Android instrumentation compiles without Telegram credentials or login.'

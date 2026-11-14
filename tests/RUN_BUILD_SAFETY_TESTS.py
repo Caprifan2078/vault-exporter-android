@@ -69,10 +69,11 @@ with TemporaryDirectory(prefix='tdlib-elf-test-') as tmp:
 # Activity recreation while ACTION_CREATE_DOCUMENT is open cannot preserve
 # passwords in Bundles. Reject a provider result without an in-memory secret.
 activity=(ROOT/'app/src/main/java/org/vault/exporter/MainActivity.java').read_text()
-assert 'if (pendingPassphrase == null || pendingChatId == 0 || selectedChatId != pendingChatId || exporting)' in activity
+assert 'if (pendingPassphrase == null || pendingChatId == 0 || selectedChatId != pendingChatId || exporting || logoutRequested)' in activity
 assert 'final long exportChatId=pendingChatId;' in activity
 assert 'export(exportChatId,out,password)' in activity
 assert 'Arrays.fill(pendingPassphrase' in activity
 assert 'final long resetChatId=selectedChatId;' in activity
 assert '"export-progress"),resetChatId,secret)' in activity
+subprocess.run(['python3',str(ROOT/'tests/RUN_TDLIB_CACHE_TESTS.py')],check=True)
 print('PASS: pinned arm64-only TDLib build gate, ELF ABI negative fixtures, picker password-loss safety')

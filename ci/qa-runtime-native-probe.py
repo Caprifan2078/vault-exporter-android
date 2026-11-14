@@ -69,4 +69,16 @@ probe()
 adb("shell", "input", "keyevent", "KEYCODE_BACK")
 time.sleep(0.5)
 probe()
-print("PASS: two real TDLib offline roundtrips, close and reopen, no account")
+
+# Android process death skips Activity.onDestroy and Java finally-blocks.
+# Confirm the signed QA APK can start a NEW process and its native bridge
+# still responds without credentials, network, or any Telegram session.
+package = "org.vault.exporter.runtimeqa"
+adb("shell", "am", "force-stop", package)
+time.sleep(0.7)
+launch = adb("shell", "am", "start", "-W", "-n",
+             package + "/org.vault.exporter.MainActivity")
+if "Error" in launch or "Exception" in launch:
+    raise RuntimeError("Android did not relaunch QA app after force-stop")
+probe()
+print("PASS: three offline TDLib diagnostics including real Android process force-stop/relaunch, no account")

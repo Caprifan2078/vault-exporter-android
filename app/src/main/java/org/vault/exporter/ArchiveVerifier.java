@@ -68,8 +68,15 @@ public final class ArchiveVerifier {
       if(c=='{'||c=='['){
         pos++;char end=c=='{'?'}':']';ws();
         if(pos<s.length()&&s.charAt(pos)==end){pos++;return new Scalar(null,'o');}
+        // A nested object must have unique keys too. Different JSON readers
+        // otherwise disagree about its meaning even in an authenticated TVA.
+        Set<String> nestedKeys=c=='{'?new HashSet<>():null;
         do {
-          if(c=='{'){string();want(':');}
+          if(c=='{'){
+            String key=string();
+            if(!nestedKeys.add(key))throw new IOException("Повторное вложенное JSON-поле: "+key);
+            want(':');
+          }
           value(depth+1);ws();
           if(pos>=s.length())throw fail();
           char sep=s.charAt(pos++);
@@ -195,6 +202,7 @@ public final class ArchiveVerifier {
   public static int verify(InputStream input,char[] password)throws Exception {
     ChunkedVault.Decrypt decrypted=new ChunkedVault.Decrypt(input,password);
     int entries=0,pages=0;long messages=0,media=0,previousId=Long.MAX_VALUE;
+    Long observedChatId=null;boolean missingChatId=false;
     MessageDigest digest=MessageDigest.getInstance("SHA-256");
     try(ZipInputStream zip=new ZipInputStream(decrypted)){
       ZipEntry e=zip.getNextEntry();
@@ -207,6 +215,13 @@ public final class ArchiveVerifier {
         while((line=rows.next())!=null){
           Map<String,Scalar> fields=new Json(line).fields();
           long id=number(fields,"id",1,Long.MAX_VALUE);
+          if(!fields.containsKey("chat_id"))missingChatId=true;
+          else {
+            long scope=number(fields,"chat_id",Long.MIN_VALUE,Long.MAX_VALUE);
+            if(scope==0 || (observedChatId!=null && observedChatId.longValue()!=scope))
+              throw new IOException("В архиве смешаны сообщения разных чатов");
+            observedChatId=scope;
+          }
           if(id>=previousId||!pageIds.add(id))throw new IOException("Повтор или неправильный порядок ID сообщения: "+id);
           if(pageIds.size()>MAX_PAGE_ROWS)throw new IOException("Слишком много сообщений на странице");
           previousId=id;messages++;
@@ -215,7 +230,7 @@ public final class ArchiveVerifier {
         entries++;zip.closeEntry();
         e=zip.getNextEntry();
         if(e==null||!e.getName().equals(page("media-index",pages)))throw new IOException("Нет индекса медиа для страницы "+pages);
-        LinkedHashMap<String,Media> referenced=new LinkedHashMap<>();HashSet<Long> usedIds=new HashSet<>();
+        LinkedHashMap<String,Media> referenced=new LinkedHashMap<>();HashSet<String> usedAttachments=new HashSet<>();
         rows=new Lines(zip,MAX_INDEX_LINE);
         while((line=rows.next())!=null){
           Map<String,Scalar> fields=new Json(line).fields();
@@ -223,7 +238,8 @@ public final class ArchiveVerifier {
           long fileId=number(fields,"file_id",1,Integer.MAX_VALUE);
           long length=number(fields,"bytes",0,Long.MAX_VALUE);
           String path=str(fields,"path"),sha=str(fields,"sha256");
-          if(!pageIds.contains(msgId)||!usedIds.add(msgId))throw new IOException("Повтор или чужое медиа: "+msgId);
+          if(!pageIds.contains(msgId)||!usedAttachments.add(msgId+":"+fileId))
+            throw new IOException("Повторное вложение или чужое сообщение: "+msgId+"/"+fileId);
           if(!path.matches("media/"+msgId+"/"+fileId+"\\.[a-z0-9]{1,8}"))throw new IOException("Неверный путь медиа: "+path);
           if(!sha.matches("[a-f0-9]{64}"))throw new IOException("Некорректный SHA-256 медиа");
           if(referenced.put(path,new Media(msgId,path,sha,length))!=null)throw new IOException("Повторное имя медиа: "+path);
@@ -244,6 +260,17 @@ public final class ArchiveVerifier {
       if(e==null||!"manifest.json".equals(e.getName()))throw new IOException("Манифест отсутствует или не последняя запись");
       Map<String,Scalar> manifest=readManifest(zip);entries++;zip.closeEntry();
       if(!"tg-vault-v1".equals(str(manifest,"schema")))throw new IOException("Неизвестная схема архива");
+      // Real TDLib exports contain chat_id in every message and the manifest.
+      // Preserve compatibility with historical test fixtures omitting it entirely.
+      if(observedChatId!=null && missingChatId)
+        throw new IOException("Не у всех сообщений указан чат");
+      if(manifest.containsKey("chat_id")) {
+        long declaredChatId=number(manifest,"chat_id",Long.MIN_VALUE,Long.MAX_VALUE);
+        if(declaredChatId==0 || (messages>0 &&
+            (observedChatId==null || missingChatId ||
+             declaredChatId!=observedChatId.longValue())))
+          throw new IOException("Чат сообщений не совпадает с манифестом");
+      }
       if(!"true".equals(required(manifest,"history_end_reached",'b').text))throw new IOException("История не завершена");
       if(number(manifest,"media_missing",0,Long.MAX_VALUE)!=0)throw new IOException("В архиве пропущены медиа");
       if(number(manifest,"messages",0,Long.MAX_VALUE)!=messages)throw new IOException("Число сообщений не совпадает с манифестом");

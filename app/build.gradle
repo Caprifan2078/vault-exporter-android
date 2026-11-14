@@ -30,6 +30,8 @@ if (!(telegramHash ==~ /[a-fA-F0-9]{0,64}/)) throw new GradleException('Invalid 
 android {
     namespace 'org.vault.exporter'
     compileSdk 35
+    // Instrumentation runs only against the isolated, runtime-credential QA APK.
+    testBuildType 'qaRuntime'
     // Match the version installed by QA CI; avoid implicit NDK downloads.
     ndkVersion '25.2.9519653'
     defaultConfig {
@@ -38,6 +40,7 @@ android {
         applicationId telegramEnvironment == 'test' ? 'org.vault.exporter.sandbox' : 'org.vault.exporter'
         minSdk 26
         targetSdk 35
+        testInstrumentationRunner 'org.vault.exporter.QaRecoveryInstrumentation'
         versionCode 9
         versionName '0.9-test-gated-alpha'
         buildConfigField 'boolean', 'TELEGRAM_TEST_DC', telegramEnvironment == 'test' ? 'true' : 'false'

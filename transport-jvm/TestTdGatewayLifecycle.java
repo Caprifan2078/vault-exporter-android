@@ -21,7 +21,18 @@ public final class TestTdGatewayLifecycle {
     TdNative.flush();
     ExecutorService pool=Executors.newCachedThreadPool();
     TdGateway gw=new TdGateway(event->{});
+    check(!gw.isClosed(),"New TDLib gateway is already marked closed");
+    // This directory models a plaintext download left behind after SIGKILL.
+    java.nio.file.Path appFiles=java.nio.file.Files.createTempDirectory("vault-gateway-cache-");
+    java.nio.file.Path orphan=appFiles.resolve("tdlib/files/voice.ogg");
+    java.nio.file.Files.createDirectories(orphan.getParent());
+    java.nio.file.Files.write(orphan,new byte[]{1,2,3});
     try {
+      boolean rejectedBeforeCleanup=false;
+      try {new TdGateway(event->{},appFiles.toFile());}
+      catch(IllegalStateException busy) {rejectedBeforeCleanup=true;}
+      check(rejectedBeforeCleanup,"Overlapping gateway accepted while native receiver owned");
+      check(java.nio.file.Files.exists(orphan),"Blocked second gateway deleted live client cache");
       boolean concurrentDenied=false;
       try {new TdGateway(event->{});} catch(IllegalStateException expected){concurrentDenied=true;}
       check(concurrentDenied,"Second TDLib receiver was accepted");
@@ -100,6 +111,7 @@ public final class TestTdGatewayLifecycle {
       sending.get(3,TimeUnit.SECONDS);
       stopping.get(3,TimeUnit.SECONDS);
       check(active.get()!=null && active.get().isCancelled(),"Stop did not cancel concurrent inflight request");
+      check(gw.isClosed(),"Stopped native client still reports usable");
       check(pending(gw).isEmpty(),"Stop leaked concurrent request");
       JSONObject firstSent=new JSONObject(TdNative.outbound.poll(2,TimeUnit.SECONDS));
       JSONObject lastSent=new JSONObject(TdNative.outbound.poll(2,TimeUnit.SECONDS));
@@ -113,7 +125,10 @@ public final class TestTdGatewayLifecycle {
       try{new TdGateway(event->{});}catch(IllegalStateException expected){probeDenied=true;}
       check(probeDenied,"Gateway overlapped offline diagnostic receiver");
       TdNative.releaseReceiver();
-      TdGateway reopened=new TdGateway(event->{});reopened.stop();
+      TdGateway reopened=new TdGateway(event->{},appFiles.toFile());
+      check(!java.nio.file.Files.exists(orphan),"Orphan TDLib plaintext cache survived safe receiver reacquisition");
+      check(java.nio.file.Files.isDirectory(appFiles.resolve("tdlib")),"Cache cleanup removed TDLib parent directory");
+      reopened.stop();
       TdNative.autoClose=false;
       TdGateway slow=new TdGateway(event->{});
       slow.stop();
@@ -132,7 +147,36 @@ public final class TestTdGatewayLifecycle {
       check(released,"Receiver not released after close confirmation");
       TdNative.autoClose=true;
       TdGateway afterClose=new TdGateway(event->{});afterClose.stop();
-      System.out.println("PASS: cancellations, timeout, interrupt preservation, ordered concurrent shutdown and no pending leaks (fake TDLib)");
+
+      // A graceful native close is NOT proof that Telegram revoked the session.
+      TdGateway plainClose=new TdGateway(event->{});
+      plainClose.stop();
+      boolean plainRejected=false;
+      try {plainClose.awaitLogoutClosed(2);}
+      catch(ExecutionException | TimeoutException expected){plainRejected=true;}
+      check(plainRejected,"Plain native close was falsely accepted as Telegram logout");
+
+      // Even LoggingOut by itself must not clear the Android Keystore: wait
+      // for Closed on the SAME TDLib client, and retain completion if the
+      // final state arrives before the caller starts waiting.
+      TdGateway logout=new TdGateway(event->{});
+      long logoutClient=TdNative.nextClient.get()-1;
+      TdNative.inbound.add(new JSONObject().put("@client_id",logoutClient)
+          .put("@type","updateAuthorizationState")
+          .put("authorization_state",new JSONObject()
+              .put("@type","authorizationStateLoggingOut")).toString());
+      Future<?> pendingLogout=pool.submit(()-> {
+        try{logout.awaitLogoutClosed(4);}
+        catch(Exception e){throw new RuntimeException(e);}
+      });
+      Thread.sleep(120);
+      check(!pendingLogout.isDone(),"LoggingOut alone was accepted as complete logout");
+      TdNative.closed(logoutClient);
+      pendingLogout.get(2,TimeUnit.SECONDS);
+      check(logout.isClosed(),"AuthorizationStateClosed did not make gateway unusable");
+      logout.awaitLogoutClosed(0); // Already delivered Closed event stays confirmed.
+      System.out.println("PASS: cancellations, timeout, interrupt preservation, ordered concurrent shutdown, " +
+        "no pending leaks, and verified LoggingOut-to-Closed lifecycle (fake TDLib)");
     } finally {gw.stop();pool.shutdownNow();}
   }
 }

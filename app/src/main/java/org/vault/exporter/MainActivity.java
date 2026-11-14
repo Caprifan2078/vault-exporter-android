@@ -19,7 +19,7 @@ import java.util.concurrent.*;
 /** A minimal native Android UI. No browser server, Termux, commands or analytics. */
 public final class MainActivity extends Activity {
   private final ExecutorService worker = Executors.newSingleThreadExecutor();
-  private TdGateway td;
+  private volatile TdGateway td;
   private LinearLayout root, interactive;
   private TextView status, selected;
   private long selectedChatId = 0;
@@ -27,6 +27,9 @@ public final class MainActivity extends Activity {
   private boolean exporting = false;
   private volatile boolean logoutRequested = false;
   private final java.util.concurrent.atomic.AtomicBoolean initializing = new java.util.concurrent.atomic.AtomicBoolean(false);
+  // UI confirmations can overlap while TDLib client creation is queued.
+  // A separate gate prevents two workers from racing the global receiver.
+  private final java.util.concurrent.atomic.AtomicBoolean connectionStarting = new java.util.concurrent.atomic.AtomicBoolean(false);
   private final java.util.concurrent.atomic.AtomicBoolean nativeProbeRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
   // QA only: never ask for a phone number until native TDLib has passed a local self-check.
   private volatile boolean nativeProbePassed = false;
@@ -613,6 +616,7 @@ public final class MainActivity extends Activity {
     }
   }
   private void askBeforeConnect() {
+    if(logoutRequested){showStatus("Дождись завершения выхода из Telegram.");return;}
     if(BuildConfig.TELEGRAM_TEST_DC){
       showStatus("Учебная сборка не подключается к Telegram. Используй вымышленный чат.");
       return;
@@ -683,6 +687,7 @@ public final class MainActivity extends Activity {
       }).show();
   }
   private void beginConnect() {
+    if (logoutRequested){showStatus("Дождись завершения выхода из Telegram.");return;}
     if (BuildConfig.DEBUG) { showStatus("В демонстрационной сборке подключение запрещено."); return; }
     if (BuildConfig.QA_RUNTIME && (qaApiId <= 1 || qaApiHash.length() != 32)) {
       showStatus("Нельзя подключиться без собственных API-ключей тестового приложения.");
@@ -692,27 +697,38 @@ public final class MainActivity extends Activity {
       showStatus("Вход не запущен: сперва необходима успешная офлайн-проверка TDLib.");
       return;
     }
+    if(td!=null || !connectionStarting.compareAndSet(false,true)) {
+      showStatus("Подключение TDLib уже выполняется.");return;
+    }
     clearUi(); message("Соединяемся с " + (BuildConfig.TELEGRAM_TEST_DC ? "тестовым Telegram" : "основным Telegram") + "…");
     showStatus("Инициализация TDLib по вашему запросу…");
-    worker.execute(() -> {
+    try {worker.execute(() -> {
       try {
-        // Do not materialize the Keystore-wrapped TDLib secret as a long-lived
-        // immutable String before TDLib actually requests its parameters.
-        td = new TdGateway(this::onTdEvent);
+        // The gateway first reserves TDLib's global native receiver, then
+        // scrubs orphan plaintext cache files BEFORE it creates a client.
+        // This prevents a second Activity from deleting live TDLib files.
+        // Encrypted resume state and TDLib's database are not touched.
+        td = new TdGateway(this::onTdEvent,getFilesDir());
         JSONObject stateObj = td.await(TdGateway.cmd("getAuthorizationState"),30);
         onAuthorizationState(stateObj);
       } catch(Throwable e) {
         // A failed initialization must not leave a half-open TDLib client.
         // Otherwise the UI says "already connected" and retry is impossible.
         abandonFailedConnection("Подключение TDLib не удалось. Сеанс не подтверждён.");
+      } finally {
+        connectionStarting.set(false);
       }
-    });
+    });} catch(RejectedExecutionException closedWorker) {
+      connectionStarting.set(false);
+      showStatus("Приложение завершает работу. Открой его повторно.");
+    }
   }
   /** A failed TDLib initialization is not an authorized session.
    * Tear down the half-open client, clear runtime credentials and allow an explicit retry. */
   private void abandonFailedConnection(String reason) {
     TdGateway abandoned=td;
     td=null;
+    connectionStarting.set(false);
     initializing.set(false);
     qaApiId=0;
     qaApiHash="";
@@ -781,6 +797,10 @@ public final class MainActivity extends Activity {
     }
     runOnUiThread(() -> {
       if (exporting) return;
+      // Late authorization updates must not resurrect the old chat/picker
+      // while the confirmed-logout cleanup is still in progress.
+      if (logoutRequested && !"authorizationStateLoggingOut".equals(name)
+          && !"authorizationStateClosed".equals(name)) return;
       clearUi();
       switch(name) {
         case "authorizationStateWaitPhoneNumber": authInput("Номер телефона в международном формате", "Номер +…", false, "Продолжить",
@@ -796,9 +816,22 @@ public final class MainActivity extends Activity {
         case "authorizationStateReady": showStatus("Подключено напрямую к Telegram. Выбери переписку."); showReady(); break;
         case "authorizationStateLoggingOut": showStatus("Завершаем только сеанс экспортёра…"); break;
         case "authorizationStateClosed":
-          // Never erase the resumable archive here: a network-confirmed logout result
-          // and an explicit cleanup path are required, even if this event arrives early.
-          showStatus(logoutRequested ? "Telegram подтвердил закрытие сеанса. Завершаем очистку…" : "Соединение закрыто.");
+          // A TDLib client can close unexpectedly. Release the stale reference
+          // without touching Keystore or encrypted staging; the native reader
+          // releases its receiver reservation after processing Closed.
+          if (!logoutRequested) {
+            td=null;
+            connectionStarting.set(false);
+            initializing.set(false);
+            qaApiId=0;
+            qaApiHash="";
+            selectedChatId=0;
+            selectedChatTitle="";
+            showStatus("TDLib закрылась. Зашифрованный прогресс сохранён. Можно подключиться повторно.");
+            button("Вернуться к подключению",this::showWelcome);
+          } else {
+            showStatus("Telegram подтвердил закрытие сеанса. Завершаем очистку…");
+          }
           break;
         default: message("Telegram запросил дополнительный способ входа: "+name+". Пока этот этап не поддержан.");
       }
@@ -835,6 +868,8 @@ public final class MainActivity extends Activity {
     button("Если загрузка не удалась: удалить её прогресс",this::confirmResetProgress);
   }
   private void chooseChat() {
+    if(logoutRequested){showStatus("Выход из Telegram ещё выполняется.");return;}
+    if(td==null){showStatus("Клиент TDLib закрыт. Повтори подключение.");return;}
     showStatus("Загружаем список чатов…");
     worker.execute(() -> {
       try {
@@ -913,6 +948,8 @@ public final class MainActivity extends Activity {
     return password;
   }
   private void requestPassphrase() {
+    if(logoutRequested){showStatus("Сначала дождись завершения выхода из Telegram.");return;}
+    if(td==null || td.isClosed()){showStatus("Клиент TDLib закрыт. Подключись повторно.");return;}
     if(selectedChatId==0) { showStatus("Сначала выбери переписку."); return; }
     if(exporting || pendingPassphrase!=null) { showStatus("Выбор места сохранения уже выполняется."); return; }
     final long dialogChatId=selectedChatId;
@@ -985,7 +1022,7 @@ public final class MainActivity extends Activity {
     // Android can recreate/kill our Activity while the document picker is open.
     // The password is intentionally NOT persisted in savedInstanceState. If it
     // vanished, reject the placeholder rather than launch with a null password.
-    if (pendingPassphrase == null || pendingChatId == 0 || selectedChatId != pendingChatId || exporting) {
+    if (pendingPassphrase == null || pendingChatId == 0 || selectedChatId != pendingChatId || exporting || logoutRequested) {
       if (pendingPassphrase != null) Arrays.fill(pendingPassphrase,'\0');
       pendingPassphrase=null;pendingChatId=0;
       try {getContentResolver().delete(destination,null,null);}catch(Exception ignored){}
@@ -1041,9 +1078,17 @@ public final class MainActivity extends Activity {
             message("ВНИМАНИЕ: архив неполный. Проверь пропущенные файлы.");
           message("Формат .tva пока не открывается в Telegram Archive Viewer. Совместимость ещё не реализована.");
           message("Пароль сохранён только в твоей памяти: приложение не сможет его восстановить.");
-          button("Завершить сеанс экспортёра",this::confirmLogout);
-          button("Выбрать другой чат",()->{clearUi();showReady();});
-          showStatus("Архив проверен. Заверши сеанс для максимальной приватности.");
+          if(td==null || td.isClosed()) {
+            td=null;
+            initializing.set(false);
+            message("Соединение TDLib закрыто. Архив проверен, но подтверждённого выхода из аккаунта нет.");
+            button("Подключиться и завершить сеанс",this::showWelcome);
+            showStatus("Архив проверен. Для корректного выхода повторно подключись к Telegram.");
+          } else {
+            button("Завершить сеанс экспортёра",this::confirmLogout);
+            button("Выбрать другой чат",()->{clearUi();showReady();});
+            showStatus("Архив проверен. Заверши сеанс для максимальной приватности.");
+          }
         });
       } catch(Exception e) {
         boolean unsafeCache=e instanceof ExportEngine.CachePrivacyException;
@@ -1057,7 +1102,19 @@ public final class MainActivity extends Activity {
           exporting=false;clearUi();
           message(explanation);
           if(!partialRemoved)message("Удаление неполного выходного архива не подтверждено. Проверь выбранную папку.");
-          button("Вернуться к выбору чата",()->{clearUi();showReady();});
+          if(td==null || td.isClosed()) {
+            // An interrupted export may have lost its native TDLib client.
+            // Never offer chat actions against the dead client; preserve
+            // the encrypted ResumeStore for a fresh authenticated connection.
+            td=null;
+            initializing.set(false);
+            selectedChatId=0;
+            selectedChatTitle="";
+            message("TDLib закрылась; зашифрованный прогресс сохранён. Подключись снова и выбери тот же чат.");
+            button("Вернуться к подключению",this::showWelcome);
+          } else {
+            button("Вернуться к выбору чата",()->{clearUi();showReady();});
+          }
           if(unsafeCache && !isFinishing() && !isDestroyed())
             new AlertDialog.Builder(this).setTitle("Защита личных данных")
               .setMessage(explanation)
@@ -1067,7 +1124,7 @@ public final class MainActivity extends Activity {
     });
   }
   private void confirmResetProgress() {
-    if(exporting || pendingPassphrase!=null)return;
+    if(exporting || pendingPassphrase!=null || logoutRequested)return;
     if(selectedChatId==0){showStatus("Сначала выбери чат.");return;}
     final long resetChatId=selectedChatId; // Freeze the target before queueing the worker.
     new AlertDialog.Builder(this).setTitle("Удалить незавершённую загрузку?")
@@ -1087,21 +1144,41 @@ public final class MainActivity extends Activity {
       }).show();
   }
   private void confirmLogout() {
-    if(exporting)return;
+    if(exporting || logoutRequested || pendingPassphrase!=null)return;
     new AlertDialog.Builder(this).setTitle("Завершить сеанс Vault?")
       .setMessage("Telegram завершит только сеанс, созданный этим экспортёром. Основное приложение Telegram останется подключённым. Незавершённые зашифрованные загрузки будут удалены. Для следующего экспорта потребуется снова войти.")
       .setNegativeButton("Остаться",null).setPositiveButton("Завершить сеанс",(dialog,n) -> {
+        // Two open dialogs can still race: reject the later confirmation.
+        if(exporting || logoutRequested || pendingPassphrase!=null)return;
         showStatus("Выходим из сеанса экспортёра…");
         logoutRequested=true;
         worker.execute(()-> {
           boolean telegramLogoutConfirmed=false;
           try{
-            // Never destroy an incomplete export BEFORE Telegram confirms logout.
-            td.await(TdGateway.cmd("logOut"),120);
+            // logOut returns Ok when the request is accepted, but account
+            // authorization can still be LoggingOut/Closing. Never delete
+            // database encryption keys until TDLib reports the actual
+            // LoggingOut -> Closed lifecycle, not an unrelated close().
+            JSONObject logoutAck=td.await(TdGateway.cmd("logOut"),120);
+            if(!"ok".equals(logoutAck.optString("@type")))
+              throw new IOException("TDLib не подтвердила запрос выхода");
+            td.awaitLogoutClosed(120);
             telegramLogoutConfirmed=true;
-            File progressDir=new File(getFilesDir(),"export-progress");
-            File[] chats=progressDir.listFiles();
-            if(chats!=null) for(File chat:chats) erasePrivateTree(chat);
+            // A confirmed native close is terminal: never keep a stale
+            // TdGateway that would block the next explicit connection.
+            td=null;
+            connectionStarting.set(false);
+            initializing.set(false);
+            qaApiId=0;
+            qaApiHash="";
+            // Once native TDLib has confirmed Closed, no downloader can still
+            // write new plaintext. Scrub its dedicated file cache explicitly.
+            // Do not rely solely on Telegram/TDLib's unspecified logout cleanup.
+            File privateStorage=getFilesDir();
+            TdCacheStartupCleaner.clean(privateStorage);
+            // Report unsafe symlinks or unreadable directories instead of
+            // silently skipping checkpoints or following external paths.
+            PrivateDataEraser.eraseProgress(privateStorage);
             // Removing the wrapping key makes any leftover encrypted staging unreadable.
             // Do it only after a confirmed logout, not after a network error.
             new SessionSecrets(this).discard();
@@ -1114,14 +1191,20 @@ public final class MainActivity extends Activity {
             } else {
               showStatus("Telegram не подтвердил выход. Незавершённый экспорт и ключ сохранены: "+e.getClass().getSimpleName());
             }
-          } finally {logoutRequested=false;}
+          } finally {
+            logoutRequested=false;
+            if(telegramLogoutConfirmed) runOnUiThread(() -> {
+              if(isFinishing() || isDestroyed())return;
+              // Never leave the old chat/export controls usable after logout.
+              // Status above still discloses any incomplete privacy cleanup.
+              selectedChatId=0;
+              selectedChatTitle="";
+              clearUi();
+              button("Вернуться к началу",this::showWelcome);
+            });
+          }
         });
       }).show();
-  }
-  private static void erasePrivateTree(File item) throws IOException {
-    File[] children=item.listFiles();
-    if(children!=null)for(File child:children)erasePrivateTree(child);
-    if(item.exists() && !item.delete())throw new IOException("Не удалось очистить закрытое хранилище");
   }
   @Override protected void onDestroy() {
     // Abandoning the picker must not retain the vault password in the Activity.

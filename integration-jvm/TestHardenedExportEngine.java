@@ -118,6 +118,26 @@ public final class TestHardenedExportEngine {
     TdGateway missingUser=new TdGateway(ids(3),missingUserRoot);missingUser.failParticipant(4);
     ByteArrayOutputStream anonymous=new ByteArrayOutputStream();send(missingUserRoot,missingUser,chat,anonymous);
     checkArchive(anonymous.toByteArray(),ids(3),0);
+    // Actual ExportEngine must export multiple paid-media files attached to ONE
+    // message and pass its final independent TVA verifier. Previously the
+    // verifier rejected the second media index row as a duplicate message ID.
+    File paidRoot=Files.createTempDirectory("paid-multi-media-").toFile();
+    TdGateway paidTd=new TdGateway(ids(5),paidRoot);
+    JSONObject paidPhotoFile=new JSONObject().put("id",502)
+      .put("remote",new JSONObject().put("unique_id","fake-502"));
+    JSONObject paidVideoFile=new JSONObject().put("id",503)
+      .put("remote",new JSONObject().put("unique_id","fake-503"));
+    JSONObject paidPhoto=new JSONObject().put("sizes",new JSONArray()
+      .put(new JSONObject().put("width",640).put("height",480).put("photo",paidPhotoFile)));
+    JSONObject paidContent=new JSONObject().put("@type","messagePaidMedia")
+      .put("media",new JSONArray()
+        .put(new JSONObject().put("@type","paidMediaPhoto").put("photo",paidPhoto))
+        .put(new JSONObject().put("@type","paidMediaVideo")
+          .put("video",new JSONObject().put("video",paidVideoFile).put("mime_type","video/mp4"))));
+    paidTd.contentOverride(0,paidContent);
+    ByteArrayOutputStream paidArchive=new ByteArrayOutputStream();
+    send(paidRoot,paidTd,chat,paidArchive);
+    checkArchive(paidArchive.toByteArray(),ids(5),3);
     // A chat can become protected while downloading or immediately before packing.
     for(int protectAt:new int[]{2,3}) {
       File protectRoot=Files.createTempDirectory("chat-protection-changed-").toFile();
@@ -129,9 +149,11 @@ public final class TestHardenedExportEngine {
       send(protectRoot,new TdGateway(ids(3),protectRoot),chat,resumed);
       checkArchive(resumed.toByteArray(),ids(3),0);
     }
-    for(int mode=1;mode<=11;mode++) {
+    // Fault 13: the saved remote unique ID disappears during the final local check.
+    // Never accept an unverifiable attachment; leave staging resumable.
+    for(int mode:new int[]{1,2,3,4,5,6,7,8,9,10,11,13}) {
       File localRoot=Files.createTempDirectory("cached-message-change-").toFile();
-      long[] sample=ids(mode==9 || mode==11?4:3);
+      long[] sample=ids(mode==9 || mode==11 || mode==13?4:3);
       TdGateway changed=new TdGateway(sample,localRoot);changed.setLocalFault(mode);
       ByteArrayOutputStream out=new ByteArrayOutputStream();boolean stopped=false;
       try{send(localRoot,changed,chat,out);}
@@ -139,7 +161,7 @@ public final class TestHardenedExportEngine {
       yes(stopped && out.size()==0,"Unsafe cached-message state accepted: "+mode);
       ByteArrayOutputStream recoveredLocal=new ByteArrayOutputStream();
       send(localRoot,new TdGateway(sample,localRoot),chat,recoveredLocal);
-      checkArchive(recoveredLocal.toByteArray(),sample,(mode==9 || mode==11)?1:0);
+      checkArchive(recoveredLocal.toByteArray(),sample,(mode==9 || mode==11 || mode==13)?1:0);
     }
     File harmlessRoot=Files.createTempDirectory("cache-state-changed-").toFile();
     TdGateway harmless=new TdGateway(ids(4),harmlessRoot);harmless.setLocalFault(12);

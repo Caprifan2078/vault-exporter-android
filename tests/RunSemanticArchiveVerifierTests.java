@@ -55,6 +55,55 @@ public final class RunSemanticArchiveVerifierTests {
   static void change(List<Entry> fixture,int pos,String body){fixture.set(pos,e(fixture.get(pos).name,body));}
   static void testCorruption()throws Exception {
     ArrayList<Entry> good=fixture();pass(good,8);
+    // Real TVA1 messages and manifest are scoped to exactly one chat.
+    // Legacy minimal fixtures without any chat_id remain readable.
+
+    ArrayList<Entry> emptyChat=new ArrayList<>();
+    emptyChat.add(e("participants.json","[]"));
+    emptyChat.add(e("manifest.json",manifest(0,0).replace("\"messages\":0","\"chat_id\":-1001,\"messages\":0")));
+    pass(emptyChat,2);
+    ArrayList<Entry> emptyInvalidChat=new ArrayList<>(emptyChat);
+    emptyInvalidChat.set(1,e("manifest.json",manifest(0,0).replace("\"messages\":0","\"chat_id\":0,\"messages\":0")));
+    reject(emptyInvalidChat,"zero chat id in empty archive");
+    ArrayList<Entry> unscopedMessages=fixture();
+    change(unscopedMessages,7,manifest(3,2).replace("\"messages\":3","\"chat_id\":-1001,\"messages\":3"));
+    reject(unscopedMessages,"manifest identifies a chat but messages omit chat_id");
+    ArrayList<Entry> scoped=fixture();
+    change(scoped,0,"{\"id\":100,\"chat_id\":-1001}\n{\"id\":90,\"chat_id\":-1001}\n");
+    change(scoped,3,"{\"id\":70,\"chat_id\":-1001}\n");
+    change(scoped,7,manifest(3,2).replace("\"messages\":3","\"chat_id\":-1001,\"messages\":3"));
+    pass(scoped,8);
+    ArrayList<Entry> mismatchedChat=new ArrayList<>(scoped);
+    change(mismatchedChat,0,"{\"id\":100,\"chat_id\":-1001}\n{\"id\":90,\"chat_id\":-1002}\n");
+    reject(mismatchedChat,"mixed chat messages");
+    ArrayList<Entry> changedManifestChat=new ArrayList<>(scoped);
+    change(changedManifestChat,7,manifest(3,2).replace("\"messages\":3","\"chat_id\":-1002,\"messages\":3"));
+    reject(changedManifestChat,"manifest points at another chat");
+    ArrayList<Entry> omittedChat=new ArrayList<>(scoped);
+    change(omittedChat,3,"{\"id\":70}\n");
+    reject(omittedChat,"one message lacks chat_id");
+    ArrayList<Entry> invalidChat=new ArrayList<>(scoped);
+    change(invalidChat,3,"{\"id\":70,\"chat_id\":\"-1001\"}\n");
+    reject(invalidChat,"chat_id as string");
+    ArrayList<Entry> missingManifestScope=new ArrayList<>(scoped);
+    change(missingManifestScope,7,manifest(3,2));
+    pass(missingManifestScope,8); // pre-manifest archives: consistent IDs still checked
+    // Paid media, chat photo animations and link previews may carry more than
+    // one different TDLib file in the SAME message. Their TVA must verify.
+    ArrayList<Entry> multi=fixture();
+    multi.set(1,e("media-index/page-000001.jsonl",
+      index(100,501,".jpg",PHOTO)+index(100,503,".mp4",CIRCLE)));
+    multi.add(3,e("media/100/503.mp4",CIRCLE));
+    multi.set(8,e("manifest.json",manifest(3,3)));
+    pass(multi,9);
+    // A reused (message_id, file_id) must still be rejected even if the
+    // attacker changes the filename/extension to evade duplicate-path checks.
+    ArrayList<Entry> duplicateFileId=fixture();
+    duplicateFileId.set(1,e("media-index/page-000001.jsonl",
+      index(100,501,".jpg",PHOTO)+index(100,501,".mp4",CIRCLE)));
+    duplicateFileId.add(3,e("media/100/501.mp4",CIRCLE));
+    duplicateFileId.set(8,e("manifest.json",manifest(3,3)));
+    reject(duplicateFileId,"same message and TDLib file id under distinct paths");
     ArrayList<Entry> a;
     a=fixture();change(a,7,manifest(300,2));reject(a,"inflated message count");
     a=fixture();change(a,7,manifest(3,200));reject(a,"inflated media count");
@@ -78,6 +127,10 @@ public final class RunSemanticArchiveVerifierTests {
     a=fixture();change(a,3,"{\"id\":110}\n");reject(a,"ascending message ID across pages");
     a=fixture();change(a,0,"{\"id\":\"100\"}\n{\"id\":90}\n");reject(a,"string message IDs");
     a=fixture();change(a,0,"{\"id\":100,\"id\":100}\n{\"id\":90}\n");reject(a,"duplicate JSON message id key");
+    a=fixture();change(a,0,"{\"id\":100,\"content\":{\"caption\":{\"text\":\"first\",\"text\":\"second\"}}}\n{\"id\":90}\n");reject(a,"duplicate nested message field");
+    a=fixture();change(a,6,"[{\"name\":{\"first_name\":\"A\",\"first_name\":\"B\"}}]");reject(a,"duplicate nested participants field");
+    a=fixture();change(a,7,manifest(3,2).replace("\"schema\"", "\"meta\":{\"value\":1,\"value\":2},\"schema\""));reject(a,"duplicate nested manifest field");
+    a=fixture();change(a,1,index(100,501,".jpg",PHOTO).replace("\"category\"", "\"metadata\":{\"x\":1,\"x\":2},\"category\""));reject(a,"duplicate nested media-index field");
     a=fixture();change(a,0,"{\"id\":100,}\n{\"id\":90}\n");reject(a,"bad JSON");
     a=fixture();change(a,0,"{\"id\":100}\n".repeat(2001));reject(a,"unbounded page count");
     a=fixture();a.set(3,e("messages/page-000003.jsonl","{\"id\":70}\n"));reject(a,"missing page numbering");

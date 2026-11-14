@@ -104,6 +104,34 @@ public final class RunStagingV2HardeningTests {
     try(RandomAccessFile f=new RandomAccessFile(oversized,"rw")){f.writeBytes("TVS1");}
     reject(()->{try(ResumeStore s=new ResumeStore(staging,chatId,secret)){
       read(s.openMedia(10000000,501));}},"Oversized legacy staging was not rejected");
+    // Simulate SIGKILL between writing a temporary encrypted staging stream
+    // and its atomic rename. A new store must reclaim only those orphan files,
+    // while preserving the last committed checkpoint, page and media ciphertext.
+    File chatRoot=new File(staging,"chat-113");
+    byte[] checkpointBefore=Files.readAllBytes(legacyPath.toPath());
+    byte[] mediaBefore=Files.readAllBytes(new File(chatRoot,"media/2-501.enc").toPath());
+    String[] stageFolders={"", "pages", "indexes", "media", "media-identities"};
+    for(String folder:stageFolders){
+      File directory=folder.isEmpty()?chatRoot:new File(chatRoot,folder);
+      Files.createDirectories(directory.toPath());
+      Files.write(new File(directory,".pending-interrupted-write.tmp").toPath(),new byte[]{1,2,3});
+      Files.write(new File(directory,".other-metadata.txt").toPath(),new byte[]{9});
+    }
+    try(ResumeStore reopened=new ResumeStore(staging,chatId,secret)){
+      for(String folder:stageFolders){
+        File directory=folder.isEmpty()?chatRoot:new File(chatRoot,folder);
+        ok(!new File(directory,".pending-interrupted-write.tmp").exists(),
+          "Crash orphan not reclaimed from "+folder);
+        ok(new File(directory,".other-metadata.txt").isFile(),
+          "Non-pending file was erased from "+folder);
+      }
+      ok(Arrays.equals(checkpointBefore,Files.readAllBytes(legacyPath.toPath())),
+        "Valid checkpoint modified during cleanup");
+      ok(Arrays.equals(mediaBefore,Files.readAllBytes(new File(chatRoot,"media/2-501.enc").toPath())),
+        "Authenticated media modified during cleanup");
+      ok(reopened.state().cursor==777,"Existing checkpoint lost after orphan recovery");
+      ok(reopened.mediaFingerprint(2,501).bytes==0,"Existing media invalid after recovery");
+    }
     System.out.println("PASS "+checks+" TVS2/JVM checks (boundaries, GCM authentication, replay, truncation, exact terminator, checkpoint, legacy)");
   }
 }

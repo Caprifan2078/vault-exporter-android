@@ -492,7 +492,7 @@ public final class ExportEngine {
       if(a.ordinal!=b.ordinal || !a.role.equals(b.role) || !a.category.equals(b.category))
         throw new CachedMessageStateException("Вложения сохранённого сообщения изменились");
       String oldId=uniqueRemoteId(a),newId=uniqueRemoteId(b);
-      if(!oldId.isEmpty() && !newId.isEmpty() && !oldId.equals(newId))
+      if(!oldId.isEmpty() && !oldId.equals(newId))
         throw new CachedMessageStateException("Медиа сохранённого сообщения изменилось");
     }
   }

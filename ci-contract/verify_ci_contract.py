@@ -47,5 +47,21 @@ assert "emulator-offline-smoke.sh" in emulator, "Offline emulator smoke missing"
 activity = read("app/src/main/java/org/vault/exporter/MainActivity.java")
 assert activity.count("Формат .tva пока не открывается в Telegram Archive Viewer") >= 2, "Missing compatibility warning before or after export"
 assert "Читалка сможет показать сохранённое" not in activity, "Unverified viewer compatibility claim"
+# Cache is only a PERFORMANCE shortcut: cache hits must re-check exact pinned
+# source/target metadata, SHA-256 bytes and the ELF/JSON ABI, never skip QA gates.
+runtime = read(".github/workflows/qa-runtime-apk.yml")
+cache_guard = read("scripts/verify_tdlib_cache.py")
+cache_tests = read("tests/RUN_TDLIB_CACHE_TESTS.py")
+build_guards = read("tests/RUN_BUILD_SAFETY_TESTS.py")
+assert sha in runtime and sha in cache_guard, "Runtime cache/source commit pin drift"
+assert "actions/cache@v4" in runtime, "TDLib binary cache optimization missing"
+assert "hashFiles('scripts/prepare_tdlib_android.py', 'scripts/verify_tdlib_elf.py', 'scripts/verify_tdlib_cache.py')" in runtime, "Cache key does not bind review and build scripts"
+assert "git -C official-tdlib-src checkout --detach \"$SRC\"" in runtime, "Cache miss must build exact pinned official source"
+assert runtime.count("python3 scripts/verify_tdlib_cache.py check") >= 2, "Cache hit and all-path verification required"
+assert "python3 scripts/verify_tdlib_elf.py native-cache/libtdjson.so" in runtime, "Cache hits require fresh ELF/ABI checks"
+assert "sha256(library)" in cache_guard and "recipe_sha256" in cache_guard, "Cache verifier must bind binary and build recipe"
+assert "RUN_TDLIB_CACHE_TESTS.py" in build_guards, "Run cache tampering fixtures in every QA compile check"
+assert "Tampered cached TDLib binary was accepted" in cache_tests, "Missing negative cache tamper fixture"
+
 print("PASS CI contracts: pinned TDLib, offline debug, isolated test DC, no production auto-enable")
 
