@@ -46,9 +46,12 @@ assert "if (closeConfirmed) TdNative.releaseReceiver();" in gateway
 assert 'if(ex instanceof InterruptedException) Thread.currentThread().interrupt();' in gateway
 
 # An acknowledgement of logOut is not the terminal authorization-state update.
-logout = between(activity, 'private void confirmLogout()', 'private static void erasePrivateTree')
+logout = between(activity, 'private void confirmLogout()', '@Override protected void onDestroy()')
 assert 'JSONObject logoutAck=td.await(TdGateway.cmd("logOut"),120);' in logout
 assert 'td.awaitLogoutClosed(120);' in logout
+assert 'TdCacheStartupCleaner.clean(privateStorage);' in logout, 'Plaintext cache must be scrubbed after logout'
+assert 'PrivateDataEraser.eraseProgress(privateStorage);' in logout, 'Fail-closed progress deletion required'
+assert logout.index('telegramLogoutConfirmed=true;') < logout.index('TdCacheStartupCleaner.clean(privateStorage);') < logout.index('PrivateDataEraser.eraseProgress(privateStorage);')
 assert logout.index('td.awaitLogoutClosed(120);') < logout.index('telegramLogoutConfirmed=true;')
 assert logout.index('telegramLogoutConfirmed=true;') < logout.index('new SessionSecrets(this).discard();')
 assert 'if (logoutObserved) logoutClosed.complete(null);' in gateway
