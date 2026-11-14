@@ -4,6 +4,9 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.DirectoryStream;
 import java.nio.file.LinkOption;
+import java.nio.file.FileVisitResult;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.Path;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
@@ -64,8 +67,13 @@ public final class ResumeStore implements Closeable {
     // The lock file is stable across app restarts. A leftover file does not
     // block the next process: the kernel releases FileLock on process death.
     File locks=new File(privateRoot,".locks");
+    if(Files.isSymbolicLink(locks.toPath()))
+      throw new IOException("Unsafe staging locks directory");
     if(!locks.isDirectory() && !locks.mkdirs())throw new IOException("Нет каталога блокировок");
-    File lockPath=new File(locks,"chat-"+chatId+".lock").getCanonicalFile();
+    File rawLockPath=new File(locks,"chat-"+chatId+".lock");
+    if(Files.isSymbolicLink(rawLockPath.toPath()))
+      throw new IOException("Unsafe staging lock file");
+    File lockPath=rawLockPath.getCanonicalFile();
     String lockKey=lockPath.getPath();
     // POSIX fcntl() locks may be released when *any* FD for the same inode is
     // closed by this process. Reject duplicate in-process writers BEFORE
@@ -79,7 +87,10 @@ public final class ResumeStore implements Closeable {
       try {held=handle.getChannel().tryLock();}
       catch(OverlappingFileLockException busy){throw new IOException("Экспорт этого чата уже выполняется",busy);}
       if(held==null)throw new IOException("Экспорт этого чата уже выполняется");
-      this.root = new File(privateRoot,"chat-"+chatId).getCanonicalFile();
+      File rawRoot=new File(privateRoot,"chat-"+chatId);
+      if(Files.isSymbolicLink(rawRoot.toPath()))
+        throw new IOException("Unsafe chat staging directory");
+      this.root = rawRoot.getCanonicalFile();
       if (!root.isDirectory() && !root.mkdirs())
         throw new IOException("Не удалось создать закрытый каталог");
       // The per-chat lock is held: no other writer can own these unfinished files.
@@ -198,7 +209,17 @@ public final class ResumeStore implements Closeable {
   private File path(String name) {
     if(name.startsWith("/") || name.contains("..") || name.contains("\\") || name.indexOf('\0')!=-1)
       throw new IllegalArgumentException("Unsafe staging path");
-    return new File(root,name);
+    // A manipulated media/pages directory can redirect otherwise-valid
+    // encrypted writes or reads outside this private chat directory.
+    Path cursor=root.toPath();
+    for(String part:name.split("/")) {
+      if(part.isEmpty() || part.equals("."))
+        throw new IllegalArgumentException("Unsafe staging path component");
+      cursor=cursor.resolve(part);
+      if(Files.isSymbolicLink(cursor))
+        throw new IllegalStateException("Unsafe symlink in encrypted staging");
+    }
+    return cursor.toFile();
   }
   private byte[] aad(String name) { return ("TVS1|"+chatId+"|"+name).getBytes(StandardCharsets.UTF_8); }
   private Media put(String name,InputStream input) throws Exception {
@@ -255,11 +276,26 @@ public final class ResumeStore implements Closeable {
     for(byte n:b) s.append(String.format(Locale.ROOT,"%02x",n&255));
     return s.toString();
   }
-  public void erase() throws IOException { if (!deleteChildren(root)) throw new IOException("Не удалось удалить временные данные экспорта"); }
-  private static boolean deleteChildren(File dir) {
-    File[] list=dir.listFiles(); boolean ok=true;
-    if(list!=null) for(File f:list) {if(f.isDirectory())ok &=deleteChildren(f); else ok &=f.delete();}
-    return dir.delete() && ok;
+  public void erase() throws IOException {
+    // Default walkFileTree is NOFOLLOW_LINKS. Never recurse into a symbolic
+    // link or silently consider an unreadable directory to be empty.
+    // The per-chat lock is held for the entire deletion.
+    Path tree=root.toPath();
+    if(!Files.isDirectory(tree,LinkOption.NOFOLLOW_LINKS))
+      throw new IOException("Unsafe or missing encrypted staging directory");
+    Files.walkFileTree(tree,new SimpleFileVisitor<Path>() {
+      @Override public FileVisitResult visitFile(Path file,BasicFileAttributes attrs)throws IOException {
+        if(!attrs.isRegularFile())
+          throw new IOException("Unsafe link or special file in encrypted staging");
+        Files.delete(file);
+        return FileVisitResult.CONTINUE;
+      }
+      @Override public FileVisitResult postVisitDirectory(Path dir,IOException failure)throws IOException {
+        if(failure!=null)throw failure;
+        Files.delete(dir);
+        return FileVisitResult.CONTINUE;
+      }
+    });
   }
   @Override public synchronized void close() {
     if(closed)return;
