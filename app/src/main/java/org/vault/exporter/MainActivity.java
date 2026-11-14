@@ -949,6 +949,7 @@ public final class MainActivity extends Activity {
   }
   private void requestPassphrase() {
     if(logoutRequested){showStatus("Сначала дождись завершения выхода из Telegram.");return;}
+    if(td==null || td.isClosed()){showStatus("Клиент TDLib закрыт. Подключись повторно.");return;}
     if(selectedChatId==0) { showStatus("Сначала выбери переписку."); return; }
     if(exporting || pendingPassphrase!=null) { showStatus("Выбор места сохранения уже выполняется."); return; }
     final long dialogChatId=selectedChatId;
@@ -1077,9 +1078,17 @@ public final class MainActivity extends Activity {
             message("ВНИМАНИЕ: архив неполный. Проверь пропущенные файлы.");
           message("Формат .tva пока не открывается в Telegram Archive Viewer. Совместимость ещё не реализована.");
           message("Пароль сохранён только в твоей памяти: приложение не сможет его восстановить.");
-          button("Завершить сеанс экспортёра",this::confirmLogout);
-          button("Выбрать другой чат",()->{clearUi();showReady();});
-          showStatus("Архив проверен. Заверши сеанс для максимальной приватности.");
+          if(td==null || td.isClosed()) {
+            td=null;
+            initializing.set(false);
+            message("Соединение TDLib закрыто. Архив проверен, но подтверждённого выхода из аккаунта нет.");
+            button("Подключиться и завершить сеанс",this::showWelcome);
+            showStatus("Архив проверен. Для корректного выхода повторно подключись к Telegram.");
+          } else {
+            button("Завершить сеанс экспортёра",this::confirmLogout);
+            button("Выбрать другой чат",()->{clearUi();showReady();});
+            showStatus("Архив проверен. Заверши сеанс для максимальной приватности.");
+          }
         });
       } catch(Exception e) {
         boolean unsafeCache=e instanceof ExportEngine.CachePrivacyException;
@@ -1093,7 +1102,19 @@ public final class MainActivity extends Activity {
           exporting=false;clearUi();
           message(explanation);
           if(!partialRemoved)message("Удаление неполного выходного архива не подтверждено. Проверь выбранную папку.");
-          button("Вернуться к выбору чата",()->{clearUi();showReady();});
+          if(td==null || td.isClosed()) {
+            // An interrupted export may have lost its native TDLib client.
+            // Never offer chat actions against the dead client; preserve
+            // the encrypted ResumeStore for a fresh authenticated connection.
+            td=null;
+            initializing.set(false);
+            selectedChatId=0;
+            selectedChatTitle="";
+            message("TDLib закрылась; зашифрованный прогресс сохранён. Подключись снова и выбери тот же чат.");
+            button("Вернуться к подключению",this::showWelcome);
+          } else {
+            button("Вернуться к выбору чата",()->{clearUi();showReady();});
+          }
           if(unsafeCache && !isFinishing() && !isDestroyed())
             new AlertDialog.Builder(this).setTitle("Защита личных данных")
               .setMessage(explanation)
