@@ -22,6 +22,8 @@ logout = section('private void confirmLogout()', '@Override protected void onDes
 finish = section('@Override protected void onDestroy()', '\n}')
 
 checks = {
+    'Chat picker blocked while Telegram logout is active': 'if(logoutRequested)' in choose,
+    'Chat picker rejects a closed native client': 'if(td==null)' in choose,
     'Chat list error is not mistaken for end': 'catch(TdGateway.TelegramError e) {if(e.code==404){allLoaded=true;break;}throw e;}' in choose,
     'Truncated list is disclosed to user': 'if(!allLoaded || ids.length()>=500)possiblyIncomplete=true;' in choose and 'Список может быть неполным' in choose,
     'Malformed chat list fails visibly': 'if(ids==null)throw new IOException' in choose,
