@@ -30,7 +30,7 @@ for required in ('td=null;', 'initializing.set(false);',
     assert required in closed, f"Closed TDLib recovery missing: {required}"
 assert 'new SessionSecrets(this).discard()' not in closed, "Native close is NOT logout"
 assert 'PrivateDataEraser.eraseProgress' not in closed, "Never erase progress on native close"
-assert 'if(logoutRequested){showStatus(' in startup, "Do not start client before logout cleanup"
+assert 'if (logoutRequested){showStatus(' in startup, "Do not start client before logout cleanup"
 
 assert "abandonFailedConnection(" in startup, "Failed initial getAuthorizationState must release client"
 assert "abandonFailedConnection(" in td_params, "Failed setTdlibParameters must release client"
