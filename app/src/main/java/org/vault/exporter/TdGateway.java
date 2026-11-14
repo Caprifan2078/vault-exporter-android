@@ -101,6 +101,9 @@ public final class TdGateway {
       throw failure;
     }
   }
+  /** Read-only lifecycle check for UI recovery after a mid-export native close. */
+  public boolean isClosed() { return !running || closing; }
+
   public CompletableFuture<JSONObject> call(JSONObject request) {
     synchronized(sendLock) {
       if(!running || closing)throw new IllegalStateException("TDLib client is closing or closed");
