@@ -48,6 +48,10 @@ public final class RunResumeSymlinkSafetyTests {
         "Symlinked chat-root was accepted");
     ok(Files.isRegularFile(victim),"Chat-root symlink touched an outside file");
     Files.delete(root.resolve("chat-901"));
+    // The rejected construction may have already created its SAFE lock file.
+    // Reset only this fictional lock fixture before testing the next symlink.
+    Files.deleteIfExists(root.resolve(".locks/chat-901.lock"));
+    Files.deleteIfExists(root.resolve(".locks"));
 
     // The lock path is outside the erasable chat subtree and must be checked too.
     Files.createSymbolicLink(root.resolve(".locks"),outside);
