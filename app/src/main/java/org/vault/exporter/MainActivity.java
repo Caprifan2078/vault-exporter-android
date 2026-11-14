@@ -1110,9 +1110,14 @@ public final class MainActivity extends Activity {
               throw new IOException("TDLib не подтвердила запрос выхода");
             td.awaitLogoutClosed(120);
             telegramLogoutConfirmed=true;
-            File progressDir=new File(getFilesDir(),"export-progress");
-            File[] chats=progressDir.listFiles();
-            if(chats!=null) for(File chat:chats) erasePrivateTree(chat);
+            // Once native TDLib has confirmed Closed, no downloader can still
+            // write new plaintext. Scrub its dedicated file cache explicitly.
+            // Do not rely solely on Telegram/TDLib's unspecified logout cleanup.
+            File privateStorage=getFilesDir();
+            TdCacheStartupCleaner.clean(privateStorage);
+            // Report unsafe symlinks or unreadable directories instead of
+            // silently skipping checkpoints or following external paths.
+            PrivateDataEraser.eraseProgress(privateStorage);
             // Removing the wrapping key makes any leftover encrypted staging unreadable.
             // Do it only after a confirmed logout, not after a network error.
             new SessionSecrets(this).discard();
@@ -1139,11 +1144,6 @@ public final class MainActivity extends Activity {
           }
         });
       }).show();
-  }
-  private static void erasePrivateTree(File item) throws IOException {
-    File[] children=item.listFiles();
-    if(children!=null)for(File child:children)erasePrivateTree(child);
-    if(item.exists() && !item.delete())throw new IOException("Не удалось очистить закрытое хранилище");
   }
   @Override protected void onDestroy() {
     // Abandoning the picker must not retain the vault password in the Activity.
