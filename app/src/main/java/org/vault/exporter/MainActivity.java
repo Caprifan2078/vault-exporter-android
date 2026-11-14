@@ -702,7 +702,7 @@ public final class MainActivity extends Activity {
     }
     clearUi(); message("Соединяемся с " + (BuildConfig.TELEGRAM_TEST_DC ? "тестовым Telegram" : "основным Telegram") + "…");
     showStatus("Инициализация TDLib по вашему запросу…");
-    worker.execute(() -> {
+    try {worker.execute(() -> {
       try {
         // The gateway first reserves TDLib's global native receiver, then
         // scrubs orphan plaintext cache files BEFORE it creates a client.
@@ -718,7 +718,10 @@ public final class MainActivity extends Activity {
       } finally {
         connectionStarting.set(false);
       }
-    });
+    });} catch(RejectedExecutionException closedWorker) {
+      connectionStarting.set(false);
+      showStatus("Приложение завершает работу. Открой его повторно.");
+    }
   }
   /** A failed TDLib initialization is not an authorized session.
    * Tear down the half-open client, clear runtime credentials and allow an explicit retry. */
