@@ -282,7 +282,7 @@ P0: дождаться _результата CI, а не предполагат�
 - Если архив уже прошёл финальную проверку, но TDLib к этому моменту закрылась, UI не предлагает кнопки `logOut` или выбора чата с мёртвым клиентом; явно пишет, что logout не подтверждён и потребуется новое подключение.
 - Код: `7c2772a5c5702c37263bd7bab517dc74dce6b988`, `ae87aa00081974dab0dfff48fc82a1303aa7251a`. Fake TDLib transport regression проверяет живой и закрытый gateway: `43e96d884e562e7ba7a5f4cf4dc51d5be67f0896`. Source UI gates: `df2c568f1969b4d1664214e9a6b9a9cdfce5570c`.
 - **Предыдущая ревизия** (параллельный старт, stale gateway) проверена обеими зелёными job в https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43648819549.
-- **Новая проверка JVM/compile (с обрывом экспорта):** https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43649132495 — пока in progress; не заявлять успех без обоих jobs.
+- **Подтверждено:** новая проверка JVM/transport и компиляции Android (с обрывом экспорта): https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43649132495 — **оба jobs SUCCESS**. Реальный live Telegram E2E не выполнялся.
 - **Последняя полная APK+два эмулятора:** https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43649098500 — пока собирает pinned TDLib, не заявлять успешный APK на последнем коде.
 - QA матрица **15/20 = 75%**, прирост за эту итерацию **+0 задач / +0 процентных пунктов**. Ни одно исправление UI не закрывает без подмены №16–20, реальный Telegram не тестировали, нет независимого security review.
 - PR #4 остаётся draft; `main` не трогать. Следующий checkpoint: проверить 43649132495, затем 43649098500; при failed-step — изучить логи, исправить и повторить только необходимые тесты.
