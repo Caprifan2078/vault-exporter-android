@@ -82,6 +82,7 @@ jobs:
                   source_keys[private_path_fingerprint(origin)] += 1
               print('Affected source fingerprints:', ', '.join(f'{key}:{num}' for key, num in sorted(source_keys.items())))
               print('Affected files (private repository):', ', '.join(sorted({row.get('File', '').split('!')[0] for row in rows})))
+              print('Affected line numbers (private repository):', ', '.join(sorted({f"{row.get('File', '').split('!')[0]}:{row.get('StartLine', '?')}" for row in rows})))
           except (OSError, ValueError, TypeError):
               print('Finding summary unavailable; no secrets printed.')
           PY
