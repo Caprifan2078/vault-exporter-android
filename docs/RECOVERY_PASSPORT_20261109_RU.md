@@ -228,3 +228,18 @@ P0: дождаться _результата CI, а не предполагат�
 - **Подтверждено:** https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43013643964 — JVM/transport fake TDLib, статические проверки и Android compile (включая Android instrumentation) — оба jobs **SUCCESS**. Полный native APK+Android Keystore emulator: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43013529602 — в момент последней проверки ещё собирает pinned TDLib, итог не подтверждён. Предыдущий APK `43012321809` отменён по concurrency при изменении функционального кода, это не ошибка теста.
 - **Пункт 15 не закрыт** до реального успеха Android Keystore crash-probe в emulator; текущая фиксированная метрика **14/20 = 70%**, +0 официально закрытых пунктов. Проверка logout на настоящем аккаунте (#16) также не сделана.
 - Особое ограничение: TDLib может отдавать события с непредусмотренной последовательностью; в этом случае приложение теперь останавливает удаление ключей, а не обещает корректный logout. Нужен controlled disposable-account test.
+
+## Проверка 15 закрыта — Android Keystore после force-stop (15 ноября 2026)
+
+**Подтверждено логами завершённой GitHub Actions #43013529602 (SHA исходников `f05684ff4c69a4c13e667bba5575cc2fa63f3a07`):**
+- `runtime-apk`: **SUCCESS** — official pinned TDLib из исходников, подписанная QA APK и изолированный androidTest APK.
+- `offline-emulator-smoke`: **SUCCESS**, в реальном эмуляторе Android выполнены отдельно instrumentation `prepare` и `verify` после принудительной остановки процесса (`am force-stop`). Содержит точные сообщения `PASS: actual Android Keystore instrumentation prepare phase` и `PASS: actual Android Keystore instrumentation verify phase`.
+- Подтверждено: прежний wrapping key из Android Keystore позволяет прочитать encrypted checkpoint/page/media, encrypted orphan pending удаляется при восстановлении, plaintext download кэш TDLib очищается при безопасном новом старте native, тестовый файл в TDLib database сохраняется. Конкретный emulator может иметь программную реализацию Keystore — **не гарантия аппаратно защищённого ключа**.
+- `offline-synthetic-export`: **SUCCESS** — fictional 60 сообщений + 7 медиа без Telegram сети.
+
+**Постоянная матрица из 20 пунктов:**
+- Пункт **15 [x]**: *Android Keystore восстановление с сохранённой сессией/зашифрованным staging после реального force-stop и очисткой orphan files* — засчитано **на уровне отдельного emulator QA-сценария без реальной авторизации**, не включает kill во время настоящей загрузки и не является реальным Telegram-session recovery.
+- Предыдущие 14/20 (70%) → **15/20 (75%)**, +1 задача, **+5 процентных пунктов**. Это ТОЛЬКО измерение выполнения QA матрицы, не 75% безопасность приложения.
+- Открыты **16** live test-account login/2FA/logout, **17** live end-to-end export/resume/multimedia, **18** foreground/background/doze и multi-GB на физическом телефоне, **19** интеграция TVA в Viewer, **20** независимый security-review + permanent release-signing/acceptance.
+- Следующее: продолжить независимый аудит и подготовить безопасный воспроизводимый live-account тест (без чужих личных данных); не закрывать пункт 16 до настоящих результатов. Полный источник: https://github.com/Caprifan2078/vault-exporter-android/actions/runs/43013529602 .
+- На дату этого checkpoint функциональный SHA `f05684ff`; после него только тесты/документация — перед релизом проверить сравнение SHA и CI. `main` не затрагивать, PR #4 держать draft.
