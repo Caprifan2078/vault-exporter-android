@@ -1,0 +1,15 @@
+title = "Vault Exporter secret scanning"
+
+[extend]
+useDefault = true
+
+# The two archived patch copies contain SHA-256 source checksums, not API keys.
+# Narrowly suppress only exact deleted checksum lines in those two historical paths,
+# and only for the built-in generic-api-key rule. Other detections remain enabled.
+[[allowlists]]
+description = "Legacy concurrency patches: known SHA-256 source-file digests"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^(?:ci-rebuild/patches/07-concurrency\.diff|handoff/patches/07-concurrency\.patch)$''']
+regexes = ['''^-\s+"(?:app/src/main/java/org/vault/exporter/SessionSecrets\.java|integration-jvm/fakes/org/vault/exporter/SessionSecrets\.java)":\s+"[a-fA-F0-9]{64}",?\s*$''']
